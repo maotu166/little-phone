@@ -2727,51 +2727,73 @@ function dragEnd(x, y){
   var arrT = L.screens[t.si];
   var skipT = (from.kind === 'screen' && from.si === t.si) ? item : null;
 
-  /* 先试挤位：落到有东西的格上，后面的往后串（真手机那种手感）
-     卡片和图标都走这条路，只有从 Dock 拖出来的图标要先造个带坐标的对象 */
-  var pushed = false;
-  {
-    var dragItem = item;
-    if(!wk && from.kind === 'dock'){
-      /* 从 Dock 拖回桌面：先造一个带坐标的图标对象再参与串位 */
-      dragItem = { t:'a', id:id, x:t.x, y:t.y, w:1, h:1 };
-    }
-    if(from.kind === 'screen' && from.si !== t.si){
-      /* 跨屏：先从来源屏摘掉，再插到目标屏 */
-      var srcArr = L.screens[from.si];
-      var si0 = srcArr.indexOf(item);
-      if(si0 < 0) si0 = from.index;
-      srcArr.splice(si0, 1);
-    }
-    if(pushInsert(t.si, dragItem, t.x, t.y, from)){
-      if(!wk && from.kind === 'dock') L.dock.splice(from.index, 1);
-      pushed = true;
-    }else if(from.kind === 'screen' && from.si !== t.si){
-      /* 挤位没成，把摘掉的放回去，走下面老逻辑 */
-      L.screens[from.si].push(item);
+  /* 新逻辑：拖到哪里就落在哪里，不重排
+     1. 目标格是空的 → 直接落那里
+     2. 目标格被占 → 把挡路的东西挤到附近空位，你的落在目标格
+     3. 挤不动 → 提示放不下 */
+  
+  var dragItem = item;
+  if(!wk && from.kind === 'dock'){
+    /* 从 Dock 拖回桌面：先造一个带坐标的图标对象 */
+    dragItem = { t:'a', id:id, x:t.x, y:t.y, w:1, h:1 };
+  }
+  
+  /* 跨屏或同屏移动：先从来源摘掉 */
+  if(from.kind === 'screen'){
+    var srcArr = L.screens[from.si];
+    var si0 = srcArr.indexOf(item);
+    if(si0 < 0) si0 = from.index;
+    srcArr.splice(si0, 1);
+    if(from.si !== t.si){
+      /* 跨屏时 skipT 要重置，因为 item 已经不在目标屏了 */
+      skipT = null;
     }
   }
-
-  if(!pushed){
-    if(!t.ok){
-      /* 目标格被占或放不下：找最近的空位落下，不硬盖别人 */
-      var f = findFreeNear(arrT, t.x, t.y, t.w, t.h, skipT);
-      if(!f){ toast('这屏放不下了'); return; }
-      t.x = f.x; t.y = f.y;
+  
+  /* 检查目标位置是否被占 */
+  var targetRect = { x:t.x, y:t.y, w:t.w, h:t.h };
+  
+  /* 一个大卡片可能同时压到好几个东西，挡路的全都要挤走。
+     先把所有阻挡者收集出来，逐个找空位；中途有一个塞不下就整体回滚。 */
+  var blockers = [];
+  for(var bi = 0; bi < arrT.length; bi++){
+    if(arrT[bi] === skipT) continue;
+    if(hits(arrT[bi], targetRect)) blockers.push(arrT[bi]);
+  }
+  
+  if(blockers.length){
+    /* 记下原位，失败要还原 */
+    var backup = blockers.map(function(b){ return { it:b, x:b.x, y:b.y }; });
+    /* 让被挤的先离场，避免它们互相当成障碍 */
+    var parked = arrT.filter(function(it){ return blockers.indexOf(it) < 0; });
+    /* 拖的这一项已经占住目标格，找空位时要避开 */
+    parked.push({ x:t.x, y:t.y, w:t.w, h:t.h });
+    var allOk = true;
+    for(var bj = 0; bj < blockers.length; bj++){
+      var b = blockers[bj];
+      var bw = isWidget(b) ? b.w : 1;
+      var bh = isWidget(b) ? b.h : 1;
+      var np = findFreeNear(parked, b.x, b.y, bw, bh, null);
+      if(!np){ allOk = false; break; }
+      b.x = np.x; b.y = np.y;
+      parked.push(b);  /* 安顿好了，成为下一个的障碍 */
     }
-
-    if(from.kind === 'dock'){
-      /* 从 Dock 拖回桌面：变成带坐标的图标 */
-      L.dock.splice(from.index, 1);
-      L.screens[t.si].push({ t:'a', id:id, x:t.x, y:t.y, w:1, h:1 });
-    }else{
-      var src = L.screens[from.si];
-      var idx = src.indexOf(item);
-      if(idx < 0) idx = from.index;
-      src.splice(idx, 1);
-      item.x = t.x; item.y = t.y;
-      L.screens[t.si].push(item);
+    if(!allOk){
+      /* 挤不动：位置还原，来源还原 */
+      backup.forEach(function(bk){ bk.it.x = bk.x; bk.it.y = bk.y; });
+      if(from.kind === 'screen') L.screens[from.si].push(dragItem);
+      toast('放不下了');
+      return;
     }
+  }
+  
+  /* 落到目标格 */
+  if(from.kind === 'dock'){
+    L.dock.splice(from.index, 1);
+    L.screens[t.si].push({ t:'a', id:id, x:t.x, y:t.y, w:1, h:1 });
+  }else{
+    dragItem.x = t.x; dragItem.y = t.y;
+    L.screens[t.si].push(dragItem);
   }
 
   saveLayout();
