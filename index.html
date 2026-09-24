@@ -1504,6 +1504,113 @@ var API = (function(){
 })();
 function saveApi(){ return jset(LS_API, API); }
 
+/* ---------- 备份 / 恢复 ---------- */
+/* 一次打包所有本机数据，导出成 JSON 文件，换设备或清缓存后能整套导回来 */
+var BACKUP_KEYS = [
+  ['layout',  'little_phone_layout_v3'],
+  ['theme',   'little_phone_theme_v2'],
+  ['names',   'little_phone_names_v2'],
+  ['wallpaper','little_phone_wallpaper_v2'],
+  ['widgets', 'little_phone_widgets_v3'],
+  ['chars',   'little_phone_chars_v1'],
+  ['chat',    'little_phone_chat_v1'],
+  ['me',      'little_phone_me_v1'],
+  ['api',     'little_phone_api_v1'],
+  ['games',   'little_phone_games_v1'],
+  ['pet',     'little_phone_pet_v1'],
+  ['usage',   'little_phone_usage_v1']
+];
+
+function makeBackup(){
+  var out = { app:'little_phone', bver:1, ts:Date.now(), data:{} };
+  BACKUP_KEYS.forEach(function(p){
+    try{
+      var raw = localStorage.getItem(p[1]);
+      if(raw !== null) out.data[p[0]] = raw;
+    }catch(e){}
+  });
+  return out;
+}
+
+function backupSize(){
+  try{ return JSON.stringify(makeBackup()).length; }catch(e){ return 0; }
+}
+
+function exportBackup(){
+  var bk = makeBackup();
+  var txt = JSON.stringify(bk);
+  var d = new Date();
+  var fn = '小手机备份_' + d.getFullYear() + pad(d.getMonth()+1) + pad(d.getDate()) +
+           '_' + pad(d.getHours()) + pad(d.getMinutes()) + '.json';
+  try{
+    var blob = new Blob([txt], { type:'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = fn;
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ try{ document.body.removeChild(a); URL.revokeObjectURL(url); }catch(e){} }, 500);
+    toast('备份已导出');
+    return true;
+  }catch(e){ toast('导出失败：' + e.message); return false; }
+}
+
+/* 把备份文本写回 localStorage。返回 { ok, n, err } */
+function importBackup(txt){
+  var bk;
+  try{ bk = JSON.parse(txt); }catch(e){ return { ok:false, err:'不是合法的 JSON' }; }
+  if(!bk || bk.app !== 'little_phone' || !bk.data) return { ok:false, err:'不是小手机的备份文件' };
+  var n = 0, map = {};
+  BACKUP_KEYS.forEach(function(p){ map[p[0]] = p[1]; });
+  for(var k in bk.data){
+    if(!map[k]) continue;
+    try{ localStorage.setItem(map[k], bk.data[k]); n++; }catch(e){}
+  }
+  return { ok:true, n:n };
+}
+
+/* ---------- API 用量统计 ---------- */
+var LS_USAGE = 'little_phone_usage_v1';
+var DEFAULT_USAGE = { ver:1, chat:{ ok:0, fail:0, lastErr:'', lastTs:0 },
+                      image:{ ok:0, fail:0, lastErr:'', lastTs:0 },
+                      voice:{ ok:0, fail:0, lastErr:'', lastTs:0 } };
+var USAGE = (function(){
+  var o = jget(LS_USAGE, null), u = clone(DEFAULT_USAGE);
+  if(o && o.ver === 1){
+    ['chat','image','voice'].forEach(function(k){
+      if(o[k]) for(var j in u[k]) if(o[k][j] !== undefined) u[k][j] = o[k][j];
+    });
+  }
+  return u;
+})();
+function saveUsage(){ return jset(LS_USAGE, USAGE); }
+function noteUsage(kind, ok, err){
+  var u = USAGE[kind];
+  if(!u) return;
+  if(ok){ u.ok++; }
+  else{ u.fail++; u.lastErr = String(err || '未知错误').slice(0, 120); }
+  u.lastTs = Date.now();
+  saveUsage();
+}
+
+/* 常见 HTTP 状态码的人话解释 */
+var HTTP_HINT = {
+  400: '请求格式不对，一般是模型名写错或参数不合法',
+  401: '密钥无效或没填对，检查 key 有没有多空格、是不是过期了',
+  402: '账号余额不够了，去服务商后台充值',
+  403: '密钥没有这个模型的权限，或者所在地区被限制',
+  404: '地址写错了，检查 URL 结尾该不该带 /v1',
+  408: '请求超时，网络慢或服务端忙',
+  413: '发的内容太长，超出模型上下文',
+  429: '请求太频繁，被限速了，等一会儿再试',
+  500: '服务端自己出错了，不是你的问题',
+  502: '网关挂了，中转站到上游那段断了',
+  503: '服务暂时不可用，一般是过载或在维护，稍后重试',
+  504: '网关超时，上游响应太慢'
+};
+function httpHint(code){
+  return HTTP_HINT[code] || '未收录的状态码，去服务商文档查一下';
+}
+
 var LANGS = {
   zh: { name:'中文',   need:false },
   ja: { name:'日语',   need:true  },
@@ -3997,50 +4104,227 @@ function openCropper(img, ratio, done){
 
 function renderSettings(body){
   body.innerHTML =
-    '<div class="card"><h3>桌面</h3>' +
+    '<div class="card"><h3>接口配置</h3>' +
+      '<div class="hint" style="margin-bottom:10px">聊天、生图、语音各自填一套。地址和密钥只存在你这台设备的浏览器里，不上传。</div>' +
+      '<button class="btn" id="st-api-chat">聊天接口</button>' +
+      '<button class="btn" id="st-api-image" style="margin-top:9px">生图接口</button>' +
+      '<button class="btn" id="st-api-voice" style="margin-top:9px">语音接口</button>' +
+    '</div>' +
+    '<div class="card"><h3>备份与恢复</h3>' +
+      '<div class="row"><span class="k">当前数据量</span><span class="v">' + fmtKB(backupSize()) + '</span></div>' +
+      '<div class="hint" style="margin:8px 0 10px">导出一个 JSON 文件存好。清了浏览器缓存、换了设备、或者哪天数据丢了，导回来就能还原桌面布局、卡片、角色、聊天记录、宠物和接口配置。</div>' +
+      '<button class="btn" id="st-export">导出备份文件</button>' +
+      '<button class="btn" id="st-import" style="margin-top:9px">从文件恢复</button>' +
+      '<input type="file" id="st-file" accept=".json,application/json" style="display:none">' +
+    '</div>' +
+    '<div class="card"><h3>接口自检</h3>' +
+      '<div class="hint" style="margin-bottom:10px">连一次真实请求，看通不通。失败会告诉你错误码是什么意思。</div>' +
+      '<button class="btn" id="st-check">开始自检</button>' +
+      '<div id="st-check-out" style="margin-top:10px"></div>' +
+    '</div>' +
+    '<div class="card"><h3>用量</h3>' + usageHTML() + '</div>' +
+    '<div class="card"><h3>错误码对照</h3>' + errTableHTML() + '</div>' +
+    '<div class="card"><h3>关于小手机</h3>' +
+      '<div class="hint">' +
+      '一个装在网页里的假手机。桌面能拖、能加卡片、能换主题壁纸，应用一个一个往里填。<br><br>' +
+      '<b>数据在哪</b>：全部存在你这台设备的浏览器本地，不联网同步、没有服务器。好处是隐私，坏处是清缓存、换浏览器、无痕模式关掉，数据就没了。所以上面那个备份要常导。<br><br>' +
+      '<b>接口怎么来</b>：聊天和生图要你自己填服务商的地址和密钥，小手机只负责发请求、显示结果，不代收费、不存你的 key。<br><br>' +
+      '<b>桌面怎么玩</b>：长按图标进整理态，拖着换位置，拖到左右边缘停一下会翻页；整理态点图标可以改名；长按空白处能加卡片、换主题。<br><br>' +
+      '<b>游戏</b>：游戏应用是个合集，现在放了电子宠物，后面还能往里加。<br><br>' +
+      '<b>免责</b>：接口接谁、拿来聊什么都是你自己的事。别拿它做违法的事，别生成、传播违法或侵权内容，别用来骗人、骚扰别人、冒充真人。产生的后果小手机不背，也背不了。<br><br>' +
+      '<b>版本</b>：v2.1 · 接口配置／备份／自检／用量／电子宠物' +
+      '</div>' +
+    '</div>' +
+    '<div class="card"><h3>桌面概况</h3>' +
       '<div class="row"><span class="k">屏数</span><span class="v">' + L.screens.length + ' 屏</span></div>' +
       '<div class="row"><span class="k">已装应用</span><span class="v">' + countApps() + ' 个</span></div>' +
       '<div class="row"><span class="k">卡片</span><span class="v">' + countWidgets() + ' 张</span></div>' +
       '<div class="row"><span class="k">Dock</span><span class="v">' + L.dock.length + ' 个</span></div>' +
-    '</div>' +
-    '<div class="card"><h3>操作</h3>' +
-      '<button class="btn" id="st-theme">换主题外观</button>' +
-      '<button class="btn" id="st-wp" style="margin-top:9px">换壁纸</button>' +
-      '<button class="btn" id="st-addwg" style="margin-top:9px">在当前这屏加张卡片</button>' +
-      '<button class="btn" id="st-edit" style="margin-top:9px">整理桌面（拖图标／改名）</button>' +
-      '<button class="btn" id="st-addpage" style="margin-top:9px">新建一屏</button>' +
-      '<button class="btn" id="st-clrname" style="margin-top:9px">清掉所有自定义名字</button>' +
-      '<button class="btn" id="st-reset" style="margin-top:9px;background:rgba(255,90,90,.16)">恢复默认布局</button>' +
-    '</div>' +
-    '<div class="card"><h3>说明</h3>' +
-      '<div class="hint">长按图标进整理态，可以拖着换位置、拖进 Dock、点一下改名。<br>' +
-      '拖到屏幕左右边缘停一下会自动翻页。<br>' +
-      '主题、名字、布局都存在本机，刷新不丢。<br>' +
-      '壁纸在「换主题外观」里，可以用图案，也能从相册挑自己的图，图会自动压小后存在本机。</div>' +
+      '<div class="hint" style="margin-top:8px">外观、壁纸、图标圆角大小都搬到「主题」里了。</div>' +
     '</div>';
 
-  body.querySelector('#st-theme').onclick = function(){ renderTheme(openWin('主题外观','')); };
-  body.querySelector('#st-wp').onclick = function(){
-    var w = openWin('主题外观','');
-    renderTheme(w);
-    var c = w.querySelectorAll('.card')[3];
-    if(c) w.scrollTop = c.offsetTop - 8;
+  body.querySelector('#st-api-chat').onclick  = function(){ apiForm('chat'); };
+  body.querySelector('#st-api-image').onclick = function(){ apiForm('image'); };
+  body.querySelector('#st-api-voice').onclick = function(){ apiForm('voice'); };
+
+  body.querySelector('#st-export').onclick = function(){ exportBackup(); };
+  var fileEl = body.querySelector('#st-file');
+  body.querySelector('#st-import').onclick = function(){ fileEl.click(); };
+  fileEl.onchange = function(){
+    var f = this.files && this.files[0];
+    if(!f) return;
+    var rd = new FileReader();
+    rd.onload = function(){
+      var r = importBackup(String(rd.result || ''));
+      if(!r.ok){ toast('恢复失败：' + r.err); return; }
+      toast('恢复了 ' + r.n + ' 项，正在重载');
+      setTimeout(function(){ location.reload(); }, 700);
+    };
+    rd.onerror = function(){ toast('文件读不出来'); };
+    rd.readAsText(f);
+    this.value = '';
   };
-  body.querySelector('#st-addwg').onclick = function(){
-    var si = (cur >= 0 && cur < L.screens.length) ? cur : 0;
-    closeWin(); pickWidget(si);
+
+  body.querySelector('#st-check').onclick = function(){
+    var out = body.querySelector('#st-check-out');
+    apiSelfCheck(out);
   };
-  body.querySelector('#st-edit').onclick = function(){
-    closeWin(); setEditing(true); toast('拖图标换位置，点图标改名');
+}
+
+function fmtKB(n){
+  if(!n) return '0 B';
+  if(n < 1024) return n + ' B';
+  if(n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  return (n / 1048576).toFixed(2) + ' MB';
+}
+
+function usageHTML(){
+  var names = { chat:'聊天', image:'生图', voice:'语音' };
+  var s = '';
+  ['chat','image','voice'].forEach(function(k){
+    var u = USAGE[k], tot = u.ok + u.fail;
+    var rate = tot ? Math.round(u.ok / tot * 100) + '%' : '—';
+    s += '<div class="row"><span class="k">' + names[k] + '</span>' +
+         '<span class="v">' + u.ok + ' 成 / ' + u.fail + ' 败 · ' + rate + '</span></div>';
+  });
+  var last = '', lastTs = 0;
+  ['chat','image','voice'].forEach(function(k){
+    if(USAGE[k].lastErr && USAGE[k].lastTs > lastTs){ lastTs = USAGE[k].lastTs; last = USAGE[k].lastErr; }
+  });
+  if(last) s += '<div class="hint" style="margin-top:8px">最近一次错误：' + esc(last) + '</div>';
+  else s += '<div class="hint" style="margin-top:8px">还没有失败记录。</div>';
+  return s;
+}
+
+function errTableHTML(){
+  var s = '';
+  Object.keys(HTTP_HINT).forEach(function(c){
+    s += '<div class="row"><span class="k" style="min-width:46px">' + c + '</span>' +
+         '<span class="v" style="text-align:right;flex:1;white-space:normal;line-height:1.5">' + HTTP_HINT[c] + '</span></div>';
+  });
+  s += '<div class="hint" style="margin-top:8px">除了这些，还有一类是「请求根本没发出去」：多半是地址写错、跨域被拦，或者网络本身不通，浏览器只会给一句 Failed to fetch。</div>';
+  return s;
+}
+
+function apiForm(kind){
+  var names = { chat:'聊天接口', image:'生图接口', voice:'语音接口' };
+  var cfg = API[kind];
+  var third = (kind === 'chat') ? 'model' : (kind === 'image' ? 'model' : 'voice');
+  var thirdLabel = (kind === 'voice') ? '音色 id' : '模型名';
+  var b = openWin(names[kind], '');
+  var h = '<div class="card">' +
+    '<div class="hint" style="margin-bottom:10px">地址填到 /v1 这一层，具体看服务商文档。</div>' +
+    '<input class="ipt" id="af-url" placeholder="接口地址，例如 https://xxx/v1" value="' + esc(cfg.url || '') + '">' +
+    '<input class="ipt" id="af-key" placeholder="密钥" value="' + esc(cfg.key || '') + '" style="margin-top:10px">' +
+    '<input class="ipt" id="af-third" placeholder="' + thirdLabel + '" value="' + esc(cfg[third] || '') + '" style="margin-top:10px">';
+  if(kind === 'chat'){
+    h += '<div class="row" style="margin-top:12px"><span class="k">温度</span><span class="v" id="af-tv">' + (cfg.temp != null ? cfg.temp : 1) + '</span></div>' +
+         '<input class="sld" type="range" id="af-temp" min="0" max="20" step="1" value="' + Math.round((cfg.temp != null ? cfg.temp : 1) * 10) + '">';
+  }
+  h += '<button class="btn" id="af-save" style="margin-top:12px">保存</button>' +
+       '<button class="btn" id="af-clr" style="margin-top:9px;background:rgba(255,90,90,.16)">清掉这套配置</button>' +
+       '</div>';
+  if(kind === 'chat'){
+    h += '<div class="card"><div class="row"><span class="k">外语角色自动翻译</span>' +
+         '<div class="sw' + (API.autoTrans ? ' on' : '') + '" id="af-trans"></div></div></div>';
+  }
+  b.innerHTML = h;
+
+  var tempEl = b.querySelector('#af-temp');
+  if(tempEl) tempEl.oninput = function(){
+    b.querySelector('#af-tv').textContent = (+this.value / 10).toFixed(1);
   };
-  body.querySelector('#st-clrname').onclick = function(){
-    NAMES = {}; saveNames(); drawScreens(); drawDock(); gotoScreen(cur); closeWin(); toast('名字都还原了');
+  var transEl = b.querySelector('#af-trans');
+  if(transEl) transEl.onclick = function(){
+    API.autoTrans = !API.autoTrans; saveApi();
+    this.classList.toggle('on', API.autoTrans);
   };
-  body.querySelector('#st-addpage').onclick = function(){ addPage(); closeWin(); };
-  body.querySelector('#st-reset').onclick = function(){
-    L = clone(DEFAULT); saveLayout(); cur = 0;
-    drawScreens(); drawDock(); gotoScreen(0); closeWin(); toast('已恢复默认');
+  b.querySelector('#af-save').onclick = function(){
+    cfg.url = (b.querySelector('#af-url').value || '').trim();
+    cfg.key = (b.querySelector('#af-key').value || '').trim();
+    cfg[third] = (b.querySelector('#af-third').value || '').trim();
+    if(tempEl) cfg.temp = +tempEl.value / 10;
+    saveApi(); toast('存好了'); closeWin();
   };
+  b.querySelector('#af-clr').onclick = function(){
+    cfg.url = ''; cfg.key = ''; cfg[third] = '';
+    saveApi(); toast('清掉了'); closeWin();
+  };
+}
+
+/* 真发一次请求探活。只测填了地址的那几路。 */
+function apiSelfCheck(out){
+  var jobs = [];
+  if(API.chat.url && API.chat.key) jobs.push('chat');
+  if(API.image.url && API.image.key) jobs.push('image');
+  if(API.voice.url && API.voice.key) jobs.push('voice');
+  if(!jobs.length){
+    out.innerHTML = '<div class="hint">三套接口都还没填，先去上面「接口配置」填一套再来。</div>';
+    return;
+  }
+  var names = { chat:'聊天', image:'生图', voice:'语音' };
+  out.innerHTML = jobs.map(function(k){
+    return '<div class="row" id="ck-' + k + '"><span class="k">' + names[k] + '</span><span class="v">测试中…</span></div>';
+  }).join('');
+
+  jobs.forEach(function(kind){
+    var row = out.querySelector('#ck-' + kind + ' .v');
+    checkOne(kind, function(r){
+      if(!row) return;
+      if(r.ok){
+        row.textContent = '通了 · ' + r.ms + 'ms';
+        row.style.color = 'var(--acc)';
+        noteUsage(kind, true);
+      }else{
+        row.textContent = r.msg;
+        row.style.color = '#ff8888';
+        noteUsage(kind, false, r.msg);
+      }
+    });
+  });
+}
+
+function checkOne(kind, done){
+  var cfg = API[kind];
+  var base = String(cfg.url || '').replace(/\/+$/, '');
+  var t0 = Date.now();
+  var url, opt;
+  if(kind === 'chat'){
+    url = base + '/chat/completions';
+    opt = {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + cfg.key },
+      body: JSON.stringify({
+        model: cfg.model || 'gpt-3.5-turbo',
+        messages:[{ role:'user', content:'hi' }],
+        max_tokens: 1
+      })
+    };
+  }else{
+    /* 生图和语音各家路径差得多，统一用 /models 探一下鉴权和连通性 */
+    url = base + '/models';
+    opt = { method:'GET', headers:{ 'Authorization':'Bearer ' + cfg.key } };
+  }
+  var timer = setTimeout(function(){ finish({ ok:false, msg:'超时 15s 没回应' }); }, 15000);
+  var settled = false;
+  function finish(r){
+    if(settled) return;
+    settled = true;
+    clearTimeout(timer);
+    r.ms = Date.now() - t0;
+    done(r);
+  }
+  try{
+    fetch(url, opt).then(function(res){
+      if(res.ok){ finish({ ok:true }); return; }
+      finish({ ok:false, msg:res.status + ' · ' + httpHint(res.status) });
+    }).catch(function(e){
+      var m = String(e && e.message || e);
+      finish({ ok:false, msg:'请求没发出去 · ' + (m.indexOf('Failed to fetch') >= 0 ? '地址不通或被跨域拦了' : m) });
+    });
+  }catch(e){
+    finish({ ok:false, msg:'请求没发出去 · ' + (e && e.message || e) });
+  }
 }
 
 function renderAbout(body){
