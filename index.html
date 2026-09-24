@@ -1580,7 +1580,7 @@ var REG = {
   camera:   { name:'相机',   icon:'camera',   render:null },
   weather:  { name:'天气',   icon:'weather',  render:null },
   mail:     { name:'邮件',   icon:'mail',     render:null },
-  game:     { name:'游戏',   icon:'game',     render:null },
+  game:     { name:'游戏',   icon:'game',     render:renderGame },
   files:    { name:'文件',   icon:'files',    render:null },
   search:   { name:'搜索',   icon:'search',   render:null },
   heart:    { name:'喜欢',   icon:'heart',    render:null },
@@ -4059,10 +4059,169 @@ function renderAbout(body){
       '<span class="tag">圆角图标大小</span>' +
     '</div>' +
     '<div class="card"><h3>怎么玩</h3>' +
-      '<div class="hint">长按任意图标 → 进整理态，拖着换位置、拖进 Dock。<br>' +
+      '<div class="hint">长按任意图标 → 进整理态,拖着换位置、拖进 Dock。<br>' +
       '整理态点图标 → 改名字。<br>' +
       '长按空位 → 菜单里有「换主题外观」。</div>' +
     '</div>';
+}
+
+/* ---------- 游戏合集 ---------- */
+var LS_GAMES = 'little_phone_games_v1';
+var LS_PET = 'little_phone_pet_v1';
+
+function loadGames(){
+  try{
+    var o = JSON.parse(localStorage.getItem(LS_GAMES) || 'null');
+    if(o && o.ver === 1) return o;
+  }catch(e){}
+  return { ver:1, list:[ { id:'pet', name:'电子宠物', desc:'领养一只宠物，照顾它吧' } ] };
+}
+function saveGames(g){ try{ localStorage.setItem(LS_GAMES, JSON.stringify(g)); }catch(e){} }
+
+function loadPet(){
+  try{
+    var o = JSON.parse(localStorage.getItem(LS_PET) || 'null');
+    if(o && o.ver === 1) return o;
+  }catch(e){}
+  return null;
+}
+function savePet(p){ try{ localStorage.setItem(LS_PET, JSON.stringify(p)); }catch(e){} }
+
+function renderGame(body){
+  var games = loadGames();
+  var s = '';
+  games.list.forEach(function(g){
+    s += '<div class="card row" style="cursor:pointer" data-gid="' + esc(g.id) + '">' +
+         '<div style="flex:1"><div style="font-weight:600">' + esc(g.name) + '</div>' +
+         '<div class="hint">' + esc(g.desc) + '</div></div>' +
+         '<div style="color:rgba(255,255,255,.35)">▸</div></div>';
+  });
+  body.innerHTML = s;
+  body.querySelectorAll('[data-gid]').forEach(function(el){
+    el.onclick = function(){ openGameSub(el.dataset.gid); };
+  });
+}
+
+function openGameSub(id){
+  if(id === 'pet'){ renderPet(openWin('电子宠物', '')); }
+  else{ toast('游戏「' + id + '」还没做'); }
+}
+
+function renderPet(body){
+  var pet = loadPet();
+  if(!pet){
+    body.innerHTML =
+      '<div class="card center" style="padding:36px 18px">' +
+        '<div style="font-size:16px;font-weight:600">还没有宠物</div>' +
+        '<div class="hint" style="margin-top:8px">领养一只陪你玩吧</div>' +
+      '</div>' +
+      '<div class="card">' +
+        '<button class="btn" id="pet-adopt">领养宠物</button>' +
+      '</div>';
+    body.querySelector('#pet-adopt').onclick = function(){ adoptPet(body); };
+    return;
+  }
+  tickPet(pet);
+  var s = '<div class="card center" style="padding:24px 18px">';
+  s += '<div id="pet-avatar" style="width:80px;height:80px;margin:0 auto 12px"></div>';
+  s += '<div style="font-size:16px;font-weight:600">' + esc(pet.name) + '</div>';
+  s += '<div class="sub">' + pet.species + '</div></div>';
+  s += '<div class="card">';
+  s += '<div class="row"><span class="k">饥饿度</span><span class="v" id="pet-hunger">' + Math.round(pet.hunger) + '%</span></div>';
+  s += '<div class="row"><span class="k">心情</span><span class="v" id="pet-mood">' + Math.round(pet.mood) + '%</span></div>';
+  s += '<div class="row"><span class="k">清洁度</span><span class="v" id="pet-clean">' + Math.round(pet.clean) + '%</span></div>';
+  s += '</div><div class="card" style="display:flex;gap:8px">';
+  s += '<button class="btn" id="pet-feed" style="flex:1">喂食</button>';
+  s += '<button class="btn" id="pet-play" style="flex:1">玩耍</button>';
+  s += '<button class="btn" id="pet-wash" style="flex:1">清洁</button>';
+  s += '</div>';
+  body.innerHTML = s;
+  drawPetAvatar(document.getElementById('pet-avatar'), pet);
+  body.querySelector('#pet-feed').onclick = function(){ feedPet(body, pet); };
+  body.querySelector('#pet-play').onclick = function(){ playPet(body, pet); };
+  body.querySelector('#pet-wash').onclick = function(){ washPet(body, pet); };
+  if(winTimer) clearInterval(winTimer);
+  winTimer = setInterval(function(){ updatePetUI(pet); }, 1000);
+}
+
+function adoptPet(body){
+  body.innerHTML =
+    '<div class="card"><h3>选择宠物种类</h3></div>' +
+    '<div class="card row" data-sp="猫" style="cursor:pointer"><span style="flex:1">🐱 猫</span><span style="color:rgba(255,255,255,.35)">▸</span></div>' +
+    '<div class="card row" data-sp="狗" style="cursor:pointer"><span style="flex:1">🐶 狗</span><span style="color:rgba(255,255,255,.35)">▸</span></div>' +
+    '<div class="card row" data-sp="兔子" style="cursor:pointer"><span style="flex:1">🐰 兔子</span><span style="color:rgba(255,255,255,.35)">▸</span></div>';
+  body.querySelectorAll('[data-sp]').forEach(function(el){
+    el.onclick = function(){ confirmAdopt(body, el.dataset.sp); };
+  });
+}
+
+function confirmAdopt(body, sp){
+  body.innerHTML =
+    '<div class="card center" style="padding:24px 18px">' +
+      '<div style="font-size:32px;margin-bottom:12px">' + (sp==='猫'?'🐱':sp==='狗'?'🐶':'🐰') + '</div>' +
+      '<div style="font-size:16px">给它起个名字吧</div>' +
+    '</div>' +
+    '<div class="card">' +
+      '<input class="ipt" id="pet-name" maxlength="8" placeholder="最多8个字" value="">' +
+      '<button class="btn" id="pet-ok" style="margin-top:12px">领养</button>' +
+    '</div>';
+  var ipt = body.querySelector('#pet-name');
+  setTimeout(function(){ try{ ipt.focus(); }catch(e){} }, 260);
+  body.querySelector('#pet-ok').onclick = function(){
+    var nm = (ipt.value || '').trim();
+    if(!nm){ toast('名字不能空'); return; }
+    var pet = {
+      ver:1, species:sp, name:nm, hunger:100, mood:100, clean:100,
+      lastTs:Date.now(), born:Date.now()
+    };
+    savePet(pet); renderPet(openWin('电子宠物', '')); toast('领养成功');
+  };
+}
+
+function tickPet(pet){
+  var now = Date.now();
+  var dt = (now - pet.lastTs) / 1000;
+  if(dt > 0){
+    pet.hunger = Math.max(0, pet.hunger - dt / 360);
+    pet.mood = Math.max(0, pet.mood - dt / 720);
+    pet.clean = Math.max(0, pet.clean - dt / 540);
+    pet.lastTs = now;
+    savePet(pet);
+  }
+}
+
+function feedPet(body, pet){
+  pet.hunger = Math.min(100, pet.hunger + 20);
+  pet.lastTs = Date.now(); savePet(pet);
+  updatePetUI(pet); toast('喂了点吃的');
+}
+function playPet(body, pet){
+  pet.mood = Math.min(100, pet.mood + 20);
+  pet.lastTs = Date.now(); savePet(pet);
+  updatePetUI(pet); toast('玩得很开心');
+}
+function washPet(body, pet){
+  pet.clean = Math.min(100, pet.clean + 20);
+  pet.lastTs = Date.now(); savePet(pet);
+  updatePetUI(pet); toast('洗得干干净净');
+}
+
+function updatePetUI(pet){
+  tickPet(pet);
+  var h = document.getElementById('pet-hunger');
+  var m = document.getElementById('pet-mood');
+  var c = document.getElementById('pet-clean');
+  if(h) h.textContent = Math.round(pet.hunger) + '%';
+  if(m) m.textContent = Math.round(pet.mood) + '%';
+  if(c) c.textContent = Math.round(pet.clean) + '%';
+}
+
+function drawPetAvatar(el, pet){
+  var sp = pet.species;
+  var e = (sp==='猫'?'🐱':sp==='狗'?'🐶':'🐰');
+  el.style.fontSize = '64px';
+  el.style.lineHeight = '80px';
+  el.textContent = e;
 }
 
 /* =========================================================
