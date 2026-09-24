@@ -1365,6 +1365,7 @@ body.lightmode .cal-d.on b,body.lightmode .cal-d.on.wknd b{color:#fff}
 body.lightmode .cal-d.on i{color:rgba(255,255,255,.85)}
 
 </style>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 </head>
 <body>
 
@@ -4362,75 +4363,165 @@ function loadGames(){
 }
 function saveGames(g){ try{ localStorage.setItem(LS_GAMES, JSON.stringify(g)); }catch(e){} }
 
+/* ============================================================
+   电子宠物 v2 · 3D建模 + 成长 + 习性 + 社交 + 成就
+   数据模型（LS_PET, ver:2）:
+   {
+     ver:2, species:'猫'|'狗'|'兔子', name, gender,
+     hunger, mood, clean,           // 三项数值 0-100 (mood=好感/心情)
+     stage:0|1|2,                    // 0幼崽 1成长 2成年
+     exp,                            // 成长经验，够了升阶
+     lastTs, born,
+     alive:true,                     // 死了就false
+     caretaker:'我'|'Q'|'一起',       // 谁在养
+     behavior:{ type, since },       // 当前习性行为
+     friends:[ {species,name,ts} ],  // 社交记录
+     outing:null|{ back, friend },   // 外出中
+     achievements:[ id... ],         // 已解锁成就
+     careDays, lastCareDay           // 连续照顾天数
+   }
+   ============================================================ */
+
+/* ---- 成长阶段配置 ---- */
+var PET_STAGES = ['幼崽期', '成长期', '成年'];
+var PET_STAGE_EXP = [0, 100, 300];   // 升到该阶段所需累计exp
+var PET_STAGE_SCALE = [0.62, 0.82, 1.0];
+
+/* ---- 物种社交白名单（符合动物习性）---- */
+var PET_SOCIAL = {
+  '猫':   ['猫', '狗', '兔子', '鸟'],
+  '狗':   ['狗', '猫', '兔子', '仓鼠'],
+  '兔子': ['兔子', '猫', '狗', '仓鼠']
+};
+var PET_NPC_NAMES = ['球球', '奶昔', '布丁', '可乐', '芝麻', '汤圆', '花卷', '豆豆', '果果', 'Momo', 'Kiki', 'Leo'];
+
+/* ---- 习性行为库 ---- */
+var PET_BEHAVIORS = {
+  '猫':   [ {t:'hide', d:'缩在柜子后面躲起来了'}, {t:'mess', d:'把桌上的东西扒拉到地上'}, {t:'sleep', d:'蜷成一团睡着了'}, {t:'play', d:'追着自己的尾巴转圈'}, {t:'clean', d:'认真地舔毛梳理'} ],
+  '狗':   [ {t:'hide', d:'钻到沙发底下不出来'}, {t:'mess', d:'把拖鞋叼得到处都是'}, {t:'sleep', d:'趴在地上打呼噜'}, {t:'play', d:'兴奋地满屋子跑'}, {t:'beg', d:'蹲在你面前摇尾巴讨吃的'} ],
+  '兔子': [ {t:'hide', d:'躲进了小窝里'}, {t:'mess', d:'啃坏了角落的纸箱'}, {t:'sleep', d:'把耳朵搭下来打盹'}, {t:'play', d:'蹦蹦跳跳地撒欢'}, {t:'eat', d:'不停地嚼着干草'} ]
+};
+
+/* ---- 成就库 ---- */
+var PET_ACHIEVEMENTS = {
+  first_feed:   { name:'第一口饭', desc:'第一次喂食', icon:'🍚' },
+  first_play:   { name:'初次玩耍', desc:'第一次陪它玩', icon:'🎾' },
+  first_wash:   { name:'爱干净', desc:'第一次帮它洗澡', icon:'🛁' },
+  first_edu:    { name:'循循善诱', desc:'第一次教育它', icon:'📖' },
+  grow_1:       { name:'长大一点点', desc:'成长到成长期', icon:'🌱' },
+  grow_2:       { name:'终于成年了', desc:'成长到成年', icon:'🌳' },
+  first_outing: { name:'第一次出门', desc:'第一次独自外出', icon:'🚪' },
+  first_friend: { name:'交到朋友了', desc:'第一次交到朋友', icon:'🤝' },
+  social_5:     { name:'社交达人', desc:'交到5个朋友', icon:'🎉' },
+  care_7:       { name:'尽职铲屎官', desc:'连续照顾7天', icon:'📅' },
+  full_love:    { name:'最好的朋友', desc:'好感度拉满', icon:'💖', he:true },
+  depressed:    { name:'永远的遗憾', desc:'因缺乏照顾抑郁离世', icon:'🕊️', be:true }
+};
+
+/* ---- 存取 ---- */
 function loadPet(){
   try{
     var o = JSON.parse(localStorage.getItem(LS_PET) || 'null');
-    if(o && o.ver === 1) return o;
+    if(o && o.ver === 2) return o;
+    if(o && o.ver === 1){ return migratePetV1(o); }
   }catch(e){}
   return null;
 }
 function savePet(p){ try{ localStorage.setItem(LS_PET, JSON.stringify(p)); }catch(e){} }
 
-function renderGame(body){
-  var games = loadGames();
-  var s = '';
-  games.list.forEach(function(g){
-    s += '<div class="card row" style="cursor:pointer" data-gid="' + esc(g.id) + '">' +
-         '<div style="flex:1"><div style="font-weight:600">' + esc(g.name) + '</div>' +
-         '<div class="hint">' + esc(g.desc) + '</div></div>' +
-         '<div style="color:rgba(255,255,255,.35)">▸</div></div>';
-  });
-  body.innerHTML = s;
-  body.querySelectorAll('[data-gid]').forEach(function(el){
-    el.onclick = function(){ openGameSub(el.dataset.gid); };
-  });
+function migratePetV1(o){
+  var np = {
+    ver:2, species:o.species, name:o.name, gender:'?',
+    hunger:o.hunger, mood:o.mood, clean:o.clean,
+    stage:0, exp:0, lastTs:o.lastTs||Date.now(), born:o.born||Date.now(),
+    alive:true, caretaker:'我', behavior:null, friends:[], outing:null,
+    achievements:[], careDays:0, lastCareDay:''
+  };
+  savePet(np); return np;
 }
 
-function openGameSub(id){
-  if(id === 'pet'){ renderPet(openWin('电子宠物', '')); }
-  else{ toast('游戏「' + id + '」还没做'); }
-}
-
+/* ---- 主界面 ---- */
 function renderPet(body){
   var pet = loadPet();
-  if(!pet){
-    body.innerHTML =
-      '<div class="card center" style="padding:36px 18px">' +
-        '<div style="font-size:16px;font-weight:600">还没有宠物</div>' +
-        '<div class="hint" style="margin-top:8px">领养一只陪你玩吧</div>' +
-      '</div>' +
-      '<div class="card">' +
-        '<button class="btn" id="pet-adopt">领养宠物</button>' +
-      '</div>';
-    body.querySelector('#pet-adopt').onclick = function(){ adoptPet(body); };
-    return;
-  }
+  if(!pet){ petAdoptEntry(body); return; }
+  if(!pet.alive){ petGraveView(body, pet); return; }
   tickPet(pet);
-  var s = '<div class="card center" style="padding:24px 18px">';
-  s += '<div id="pet-avatar" style="width:80px;height:80px;margin:0 auto 12px"></div>';
-  s += '<div style="font-size:16px;font-weight:600">' + esc(pet.name) + '</div>';
-  s += '<div class="sub">' + pet.species + '</div></div>';
+
+  var stName = PET_STAGES[pet.stage];
+  var s = '';
+  /* 3D 舞台 */
+  s += '<div class="card" style="padding:0;overflow:hidden;position:relative">';
+  s += '<div id="pet3d" style="width:100%;height:240px;background:radial-gradient(circle at 50% 30%,#3a3f52,#20232e)"></div>';
+  s += '<div id="pet-behav" style="position:absolute;left:10px;top:10px;right:10px;font-size:12px;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6);pointer-events:none"></div>';
+  s += '</div>';
+  /* 名牌 */
+  s += '<div class="card center" style="padding:14px 18px">';
+  s += '<div style="font-size:17px;font-weight:600">' + esc(pet.name) + '</div>';
+  s += '<div class="sub">' + pet.species + ' · ' + stName + ' · 陪伴' + petAgeDays(pet) + '天</div>';
+  /* 成长进度条 */
+  if(pet.stage < 2){
+    var need = PET_STAGE_EXP[pet.stage+1], cur = pet.exp;
+    var pct = Math.min(100, Math.round(cur / need * 100));
+    s += '<div style="margin-top:8px;height:6px;border-radius:3px;background:rgba(255,255,255,.12);overflow:hidden">';
+    s += '<div style="width:' + pct + '%;height:100%;background:linear-gradient(90deg,#7cd97c,#4fb04f)"></div></div>';
+    s += '<div class="hint" style="margin-top:4px">成长值 ' + Math.round(cur) + '/' + need + '</div>';
+  }
+  s += '</div>';
+  /* 数值 */
   s += '<div class="card">';
   s += '<div class="row"><span class="k">饥饿度</span><span class="v" id="pet-hunger">' + Math.round(pet.hunger) + '%</span></div>';
-  s += '<div class="row"><span class="k">心情</span><span class="v" id="pet-mood">' + Math.round(pet.mood) + '%</span></div>';
+  s += '<div class="row"><span class="k">好感/心情</span><span class="v" id="pet-mood">' + Math.round(pet.mood) + '%</span></div>';
   s += '<div class="row"><span class="k">清洁度</span><span class="v" id="pet-clean">' + Math.round(pet.clean) + '%</span></div>';
-  s += '</div><div class="card" style="display:flex;gap:8px">';
-  s += '<button class="btn" id="pet-feed" style="flex:1">喂食</button>';
-  s += '<button class="btn" id="pet-play" style="flex:1">玩耍</button>';
-  s += '<button class="btn" id="pet-wash" style="flex:1">清洁</button>';
   s += '</div>';
+  /* 按钮 */
+  s += '<div class="card" style="display:flex;gap:8px;flex-wrap:wrap">';
+  s += '<button class="btn" id="pet-feed" style="flex:1;min-width:70px">喂食</button>';
+  s += '<button class="btn" id="pet-play" style="flex:1;min-width:70px">玩耍</button>';
+  s += '<button class="btn" id="pet-wash" style="flex:1;min-width:70px">清洁</button>';
+  s += '</div>';
+  s += '<div class="card" style="display:flex;gap:8px;flex-wrap:wrap">';
+  if(pet.behavior && pet.behavior.type === 'mess'){
+    s += '<button class="btn" id="pet-edu" style="flex:1;min-width:70px">教育</button>';
+  }
+  s += '<button class="btn" id="pet-social" style="flex:1;min-width:70px">社交记录</button>';
+  s += '<button class="btn" id="pet-ach" style="flex:1;min-width:70px">成就</button>';
+  s += '</div>';
+  /* 外出状态 */
+  if(pet.outing){
+    var left = Math.max(0, Math.round((pet.outing.back - Date.now())/1000));
+    s += '<div class="card center"><div class="hint">🚪 出门交朋友了，约 ' + Math.ceil(left/60) + ' 分钟后回来</div></div>';
+  }
+
   body.innerHTML = s;
-  drawPetAvatar(document.getElementById('pet-avatar'), pet);
+  petInit3D(document.getElementById('pet3d'), pet);
+  petShowBehavior(pet);
+
   body.querySelector('#pet-feed').onclick = function(){ feedPet(body, pet); };
   body.querySelector('#pet-play').onclick = function(){ playPet(body, pet); };
   body.querySelector('#pet-wash').onclick = function(){ washPet(body, pet); };
+  var eduBtn = body.querySelector('#pet-edu'); if(eduBtn) eduBtn.onclick = function(){ eduPet(body, pet); };
+  body.querySelector('#pet-social').onclick = function(){ petSocialView(body, pet); };
+  body.querySelector('#pet-ach').onclick = function(){ petAchView(body, pet); };
+
   if(winTimer) clearInterval(winTimer);
-  winTimer = setInterval(function(){ updatePetUI(pet); }, 1000);
+  winTimer = setInterval(function(){ petLoop(body, pet); }, 1000);
+}
+
+/* ---- 领养入口 ---- */
+function petAdoptEntry(body){
+  body.innerHTML =
+    '<div class="card center" style="padding:36px 18px">' +
+      '<div style="font-size:44px;margin-bottom:8px">🐾</div>' +
+      '<div style="font-size:16px;font-weight:600">还没有宠物</div>' +
+      '<div class="hint" style="margin-top:8px">从幼崽养起，陪它慢慢长大</div>' +
+    '</div>' +
+    '<div class="card"><button class="btn" id="pet-adopt">领养一只幼崽</button></div>';
+  body.querySelector('#pet-adopt').onclick = function(){ adoptPet(body); };
 }
 
 function adoptPet(body){
   body.innerHTML =
-    '<div class="card"><h3>选择宠物种类</h3></div>' +
+    '<div class="card"><h3>选择宠物种类</h3><div class="hint">领来的都是刚出生的幼崽</div></div>' +
     '<div class="card row" data-sp="猫" style="cursor:pointer"><span style="flex:1">🐱 猫</span><span style="color:rgba(255,255,255,.35)">▸</span></div>' +
     '<div class="card row" data-sp="狗" style="cursor:pointer"><span style="flex:1">🐶 狗</span><span style="color:rgba(255,255,255,.35)">▸</span></div>' +
     '<div class="card row" data-sp="兔子" style="cursor:pointer"><span style="flex:1">🐰 兔子</span><span style="color:rgba(255,255,255,.35)">▸</span></div>';
@@ -4440,13 +4531,19 @@ function adoptPet(body){
 }
 
 function confirmAdopt(body, sp){
+  var emo = (sp==='猫'?'🐱':sp==='狗'?'🐶':'🐰');
   body.innerHTML =
     '<div class="card center" style="padding:24px 18px">' +
-      '<div style="font-size:32px;margin-bottom:12px">' + (sp==='猫'?'🐱':sp==='狗'?'🐶':'🐰') + '</div>' +
-      '<div style="font-size:16px">给它起个名字吧</div>' +
+      '<div style="font-size:32px;margin-bottom:12px">' + emo + '</div>' +
+      '<div style="font-size:16px">给这只小家伙起个名字</div>' +
     '</div>' +
     '<div class="card">' +
-      '<input class="ipt" id="pet-name" maxlength="8" placeholder="最多8个字" value="">' +
+      '<input class="ipt" id="pet-name" maxlength="8" placeholder="最多8个字">' +
+      '<div class="row" style="margin-top:10px"><span class="k">谁来养</span>' +
+        '<select class="ipt" id="pet-ct" style="width:auto;flex:0 0 auto">' +
+          '<option value="我">我自己养</option>' +
+          '<option value="一起">和Q一起养</option>' +
+        '</select></div>' +
       '<button class="btn" id="pet-ok" style="margin-top:12px">领养</button>' +
     '</div>';
   var ipt = body.querySelector('#pet-name');
@@ -4454,40 +4551,116 @@ function confirmAdopt(body, sp){
   body.querySelector('#pet-ok').onclick = function(){
     var nm = (ipt.value || '').trim();
     if(!nm){ toast('名字不能空'); return; }
+    var ct = body.querySelector('#pet-ct').value;
     var pet = {
-      ver:1, species:sp, name:nm, hunger:100, mood:100, clean:100,
-      lastTs:Date.now(), born:Date.now()
+      ver:2, species:sp, name:nm, gender:(Math.random()<0.5?'♂':'♀'),
+      hunger:90, mood:90, clean:90, stage:0, exp:0,
+      lastTs:Date.now(), born:Date.now(), alive:true, caretaker:ct,
+      behavior:null, friends:[], outing:null, achievements:[],
+      careDays:1, lastCareDay:petToday()
     };
-    savePet(pet); renderPet(openWin('电子宠物', '')); toast('领养成功');
+    savePet(pet);
+    renderPet(openWin('电子宠物', ''));
+    toast('领养成功，好好照顾它');
   };
 }
 
+/* ---- 墓碑（死亡）---- */
+function petGraveView(body, pet){
+  body.innerHTML =
+    '<div class="card center" style="padding:40px 18px">' +
+      '<div style="font-size:44px;margin-bottom:10px">🕊️</div>' +
+      '<div style="font-size:16px;font-weight:600">' + esc(pet.name) + ' 离开了</div>' +
+      '<div class="hint" style="margin-top:8px">它因为长期缺乏照顾变得抑郁，最终离开了。<br>陪伴了你 ' + petAgeDays(pet) + ' 天。</div>' +
+    '</div>' +
+    '<div class="card"><button class="btn" id="pet-new">重新领养一只</button></div>';
+  body.querySelector('#pet-new').onclick = function(){
+    localStorage.removeItem(LS_PET);
+    adoptPet(body);
+  };
+}
+
+/* ---- 数值 tick ---- */
 function tickPet(pet){
   var now = Date.now();
   var dt = (now - pet.lastTs) / 1000;
-  if(dt > 0){
-    pet.hunger = Math.max(0, pet.hunger - dt / 360);
-    pet.mood = Math.max(0, pet.mood - dt / 720);
-    pet.clean = Math.max(0, pet.clean - dt / 540);
-    pet.lastTs = now;
-    savePet(pet);
+  if(dt <= 0){ return; }
+  pet.hunger = Math.max(0, pet.hunger - dt / 360);
+  pet.mood   = Math.max(0, pet.mood - dt / 720);
+  pet.clean  = Math.max(0, pet.clean - dt / 540);
+  /* 饥饿或脏会额外拖累心情 */
+  if(pet.hunger < 20 || pet.clean < 20){ pet.mood = Math.max(0, pet.mood - dt / 300); }
+  /* 状态好就积累成长值 */
+  if(pet.hunger > 40 && pet.mood > 40 && pet.clean > 40 && pet.stage < 2){
+    pet.exp += dt / 60;   // 状态好时每分钟+1exp
+    checkGrow(pet);
+  }
+  pet.lastTs = now;
+  /* 连续照顾天数 */
+  var td = petToday();
+  if(pet.lastCareDay && pet.lastCareDay !== td){
+    var gap = petDayGap(pet.lastCareDay, td);
+    if(gap === 1){ pet.careDays += 1; if(pet.careDays >= 7) grantAch(pet,'care_7'); }
+    else if(gap > 1){ pet.careDays = 1; }
+    pet.lastCareDay = td;
+  }
+  /* 死亡判定 */
+  if(pet.mood <= 0 && pet.alive){
+    pet.alive = false;
+    grantAch(pet, 'depressed');
+  }
+  savePet(pet);
+}
+
+function checkGrow(pet){
+  if(pet.stage < 2 && pet.exp >= PET_STAGE_EXP[pet.stage+1]){
+    pet.stage += 1;
+    grantAch(pet, pet.stage===1?'grow_1':'grow_2');
+    toast(pet.name + ' 成长到' + PET_STAGES[pet.stage] + '了！');
+    petRebuildModel(pet);
   }
 }
 
+/* ---- 交互按钮 ---- */
 function feedPet(body, pet){
-  pet.hunger = Math.min(100, pet.hunger + 20);
-  pet.lastTs = Date.now(); savePet(pet);
-  updatePetUI(pet); toast('喂了点吃的');
+  if(!pet.alive) return;
+  pet.hunger = Math.min(100, pet.hunger + 22);
+  pet.mood = Math.min(100, pet.mood + 4);
+  pet.lastTs = Date.now();
+  grantAch(pet, 'first_feed'); checkFullLove(pet);
+  savePet(pet); updatePetUI(pet); petBounce();
+  toast('喂了点吃的');
 }
 function playPet(body, pet){
+  if(!pet.alive) return;
   pet.mood = Math.min(100, pet.mood + 20);
-  pet.lastTs = Date.now(); savePet(pet);
-  updatePetUI(pet); toast('玩得很开心');
+  pet.exp += 3; pet.lastTs = Date.now();
+  grantAch(pet, 'first_play'); checkGrow(pet); checkFullLove(pet);
+  savePet(pet); updatePetUI(pet); petBounce();
+  toast('玩得很开心');
 }
 function washPet(body, pet){
-  pet.clean = Math.min(100, pet.clean + 20);
-  pet.lastTs = Date.now(); savePet(pet);
-  updatePetUI(pet); toast('洗得干干净净');
+  if(!pet.alive) return;
+  pet.clean = Math.min(100, pet.clean + 25);
+  pet.mood = Math.min(100, pet.mood + 4);
+  pet.lastTs = Date.now();
+  grantAch(pet, 'first_wash'); checkFullLove(pet);
+  savePet(pet); updatePetUI(pet); petBounce();
+  toast('洗得干干净净');
+}
+function eduPet(body, pet){
+  if(!pet.alive) return;
+  pet.behavior = null;   // 停止捣乱
+  pet.mood = Math.max(0, pet.mood - 3);   // 被管教有点小情绪
+  pet.exp += 2;
+  grantAch(pet, 'first_edu');
+  savePet(pet);
+  renderPet(openWin('电子宠物', ''));
+  toast('教育了一下，它乖了');
+}
+
+function checkFullLove(pet){
+  if(pet.mood >= 100){ grantAch(pet, 'full_love'); }
 }
 
 function updatePetUI(pet){
@@ -4500,14 +4673,271 @@ function updatePetUI(pet){
   if(c) c.textContent = Math.round(pet.clean) + '%';
 }
 
-function drawPetAvatar(el, pet){
-  var sp = pet.species;
-  var e = (sp==='猫'?'🐱':sp==='狗'?'🐶':'🐰');
-  el.style.fontSize = '64px';
-  el.style.lineHeight = '80px';
-  el.textContent = e;
+/* ---- 每秒循环：数值刷新 + 习性触发 + 外出结算 ---- */
+function petLoop(body, pet){
+  if(!pet.alive){ clearInterval(winTimer); renderPet(openWin('电子宠物', '')); return; }
+  updatePetUI(pet);
+  /* 外出结算 */
+  if(pet.outing && Date.now() >= pet.outing.back){
+    finishOuting(body, pet);
+    return;
+  }
+  /* 习性触发：不在外出、没有当前行为时，低概率触发 */
+  if(!pet.outing && !pet.behavior){
+    if(Math.random() < 0.06){   // 每秒6%
+      triggerBehavior(pet);
+      petShowBehavior(pet);
+      /* 捣乱需要教育按钮，重绘一次 */
+      if(pet.behavior && pet.behavior.type === 'mess'){ renderPet(openWin('电子宠物','')); return; }
+    }
+  } else if(pet.behavior){
+    /* 行为持续一段后自动结束 */
+    if(Date.now() - pet.behavior.since > 12000){
+      pet.behavior = null; savePet(pet); petShowBehavior(pet);
+    }
+  }
+  /* 宠物自己决定外出：成年、状态好、无行为时低概率 */
+  if(!pet.outing && !pet.behavior && pet.stage >= 1 && pet.hunger>50 && pet.mood>50){
+    if(Math.random() < 0.01){ startOuting(body, pet); }
+  }
 }
 
+function triggerBehavior(pet){
+  var lib = PET_BEHAVIORS[pet.species] || PET_BEHAVIORS['猫'];
+  var b = lib[Math.floor(Math.random()*lib.length)];
+  pet.behavior = { type:b.t, desc:b.d, since:Date.now() };
+  savePet(pet);
+}
+
+function petShowBehavior(pet){
+  var el = document.getElementById('pet-behav');
+  if(!el) return;
+  if(pet.outing){ el.textContent = '🚪 出门了…'; return; }
+  if(pet.behavior){ el.textContent = '💭 ' + pet.behavior.desc; }
+  else{
+    var mood = pet.mood;
+    el.textContent = mood>70 ? '😺 心情不错' : mood>40 ? '🙂 一切正常' : mood>15 ? '😿 有点不开心' : '😢 快撑不住了…';
+  }
+}
+
+/* ---- 外出社交 ---- */
+function startOuting(body, pet){
+  var dur = 60000 + Math.floor(Math.random()*120000);   // 1-3分钟
+  /* 生成符合习性的朋友 */
+  var allow = PET_SOCIAL[pet.species] || [pet.species];
+  var fsp = allow[Math.floor(Math.random()*allow.length)];
+  var fnm = PET_NPC_NAMES[Math.floor(Math.random()*PET_NPC_NAMES.length)];
+  pet.outing = { back: Date.now()+dur, friend:{ species:fsp, name:fnm } };
+  grantAch(pet, 'first_outing');
+  savePet(pet);
+  renderPet(openWin('电子宠物',''));
+  toast(pet.name + ' 自己出门玩去了');
+}
+
+function finishOuting(body, pet){
+  var f = pet.outing.friend;
+  pet.friends.push({ species:f.species, name:f.name, ts:Date.now() });
+  pet.outing = null;
+  pet.mood = Math.min(100, pet.mood + 12);   // 出门交友心情变好
+  pet.exp += 8;
+  grantAch(pet, 'first_friend');
+  if(pet.friends.length >= 5) grantAch(pet, 'social_5');
+  checkGrow(pet); checkFullLove(pet);
+  savePet(pet);
+  renderPet(openWin('电子宠物',''));
+  toast(pet.name + ' 回来了，交了个朋友：' + f.species + f.name);
+}
+
+function petSocialView(body, pet){
+  var s = '<div class="card row" style="cursor:pointer" id="pet-back"><span style="flex:1">‹ 返回</span></div>';
+  s += '<div class="card"><h3>社交记录</h3><div class="hint">' + pet.name + ' 一共交了 ' + pet.friends.length + ' 个朋友</div></div>';
+  if(pet.friends.length === 0){
+    s += '<div class="card center"><div class="hint">还没有朋友，成年后它会自己出门交友</div></div>';
+  } else {
+    pet.friends.slice().reverse().forEach(function(f){
+      var emo = f.species==='猫'?'🐱':f.species==='狗'?'🐶':f.species==='兔子'?'🐰':f.species==='鸟'?'🐦':'🐹';
+      s += '<div class="card row"><span style="flex:1">' + emo + ' ' + esc(f.name) + '<span class="hint"> · ' + f.species + '</span></span>' +
+           '<span class="hint">' + petFmtDate(f.ts) + '</span></div>';
+    });
+  }
+  body.innerHTML = s;
+  body.querySelector('#pet-back').onclick = function(){ renderPet(openWin('电子宠物','')); };
+}
+
+/* ---- 成就 ---- */
+function grantAch(pet, id){
+  if(!pet.achievements) pet.achievements = [];
+  if(pet.achievements.indexOf(id) >= 0) return;
+  pet.achievements.push(id);
+  savePet(pet);
+  var a = PET_ACHIEVEMENTS[id];
+  if(a) toast('🏆 解锁成就：' + a.name);
+}
+
+function petAchView(body, pet){
+  var s = '<div class="card row" style="cursor:pointer" id="pet-back"><span style="flex:1">‹ 返回</span></div>';
+  var got = pet.achievements || [];
+  s += '<div class="card"><h3>成就</h3><div class="hint">已解锁 ' + got.length + '/' + Object.keys(PET_ACHIEVEMENTS).length + '</div></div>';
+  Object.keys(PET_ACHIEVEMENTS).forEach(function(id){
+    var a = PET_ACHIEVEMENTS[id];
+    var has = got.indexOf(id) >= 0;
+    var tag = a.he ? '<span class="tag" style="background:rgba(255,120,180,.25)">HE</span>' : a.be ? '<span class="tag" style="background:rgba(120,120,140,.3)">BE</span>' : '';
+    s += '<div class="card row" style="opacity:' + (has?'1':'.4') + '">' +
+         '<span style="font-size:22px;margin-right:10px">' + (has?a.icon:'🔒') + '</span>' +
+         '<span style="flex:1"><div style="font-weight:600">' + esc(a.name) + ' ' + tag + '</div>' +
+         '<div class="hint">' + esc(a.desc) + '</div></span></div>';
+  });
+  body.innerHTML = s;
+  body.querySelector('#pet-back').onclick = function(){ renderPet(openWin('电子宠物','')); };
+}
+
+/* ---- 时间工具 ---- */
+function petAgeDays(pet){ return Math.max(0, Math.floor((Date.now()-pet.born)/86400000)); }
+function petToday(){ var d=new Date(); return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate(); }
+function petDayGap(a, b){
+  var pa=a.split('-'), pb=b.split('-');
+  var da=new Date(+pa[0],+pa[1]-1,+pa[2]), db=new Date(+pb[0],+pb[1]-1,+pb[2]);
+  return Math.round((db-da)/86400000);
+}
+function petFmtDate(ts){ var d=new Date(ts); return (d.getMonth()+1)+'/'+d.getDate()+' '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); }
+
+/* ============================================================
+   3D 渲染（Three.js）— 用低多边形基础几何体拼可爱动物
+   ============================================================ */
+var pet3d = null;   // {renderer, scene, camera, group, raf, drag}
+
+function petInit3D(el, pet){
+  if(!el) return;
+  if(typeof THREE === 'undefined'){
+    el.innerHTML = '<div style="color:#fff;text-align:center;padding:100px 0;font-size:13px">3D组件加载中…<br>网络不好时会退回平面显示</div>';
+    return;
+  }
+  petDispose3D();
+  var w = el.clientWidth || 300, h = 240;
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(42, w/h, 0.1, 100);
+  camera.position.set(0, 1.1, 4.2);
+  camera.lookAt(0, 0.6, 0);
+  var renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+  renderer.setSize(w, h);
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio||1));
+  el.innerHTML = ''; el.appendChild(renderer.domElement);
+
+  var amb = new THREE.AmbientLight(0xffffff, 0.75); scene.add(amb);
+  var dir = new THREE.DirectionalLight(0xffffff, 0.85); dir.position.set(2,4,3); scene.add(dir);
+
+  var group = buildPetModel(pet);
+  scene.add(group);
+
+  pet3d = { renderer:renderer, scene:scene, camera:camera, group:group, raf:0, rotY:0, drag:null, el:el, bounce:0 };
+
+  /* 拖拽旋转 */
+  var down=false, lastX=0;
+  renderer.domElement.style.touchAction = 'none';
+  function pd(x){ down=true; lastX=x; }
+  function pm(x){ if(!down) return; pet3d.rotY += (x-lastX)*0.01; lastX=x; }
+  function pu(){ down=false; }
+  renderer.domElement.addEventListener('mousedown', function(e){ pd(e.clientX); });
+  window.addEventListener('mousemove', function(e){ pm(e.clientX); });
+  window.addEventListener('mouseup', pu);
+  renderer.domElement.addEventListener('touchstart', function(e){ pd(e.touches[0].clientX); }, {passive:true});
+  renderer.domElement.addEventListener('touchmove', function(e){ pm(e.touches[0].clientX); }, {passive:true});
+  renderer.domElement.addEventListener('touchend', pu);
+
+  function loop(){
+    if(!pet3d) return;
+    pet3d.rotY += 0.004;
+    group.rotation.y = pet3d.rotY;
+    /* 呼吸/弹跳 */
+    if(pet3d.bounce > 0){ pet3d.bounce -= 0.05; }
+    var by = Math.abs(Math.sin(Date.now()/500))*0.04 + (pet3d.bounce>0?pet3d.bounce*0.3:0);
+    group.position.y = by;
+    renderer.render(scene, camera);
+    pet3d.raf = requestAnimationFrame(loop);
+  }
+  loop();
+}
+
+function petBounce(){ if(pet3d) pet3d.bounce = 1; }
+
+function petRebuildModel(pet){
+  if(!pet3d) return;
+  pet3d.scene.remove(pet3d.group);
+  pet3d.group = buildPetModel(pet);
+  pet3d.scene.add(pet3d.group);
+}
+
+function petDispose3D(){
+  if(!pet3d) return;
+  try{ cancelAnimationFrame(pet3d.raf); }catch(e){}
+  try{ pet3d.renderer.dispose(); }catch(e){}
+  pet3d = null;
+}
+
+/* ---- 用几何体拼低多边形动物 ---- */
+function buildPetModel(pet){
+  var g = new THREE.Group();
+  var scale = PET_STAGE_SCALE[pet.stage] || 1;
+  var col = petBodyColor(pet.species);
+  var mat = new THREE.MeshStandardMaterial({ color:col, flatShading:true, roughness:0.9 });
+  var darkMat = new THREE.MeshStandardMaterial({ color:0x2b2b33, flatShading:true, roughness:0.9 });
+  var pinkMat = new THREE.MeshStandardMaterial({ color:0xffb3c1, flatShading:true, roughness:0.9 });
+
+  /* 身体 */
+  var body = new THREE.Mesh(new THREE.SphereGeometry(0.8, 8, 6), mat);
+  body.scale.set(1, 0.85, 1.15); body.position.y = 0.6;
+  g.add(body);
+  /* 头 */
+  var head = new THREE.Mesh(new THREE.SphereGeometry(0.62, 8, 6), mat);
+  head.position.set(0, 1.25, 0.55);
+  g.add(head);
+  /* 眼睛 */
+  var eyeGeo = new THREE.SphereGeometry(0.09, 6, 5);
+  var e1 = new THREE.Mesh(eyeGeo, darkMat); e1.position.set(-0.22, 1.32, 1.08); g.add(e1);
+  var e2 = new THREE.Mesh(eyeGeo, darkMat); e2.position.set(0.22, 1.32, 1.08); g.add(e2);
+  /* 鼻子 */
+  var nose = new THREE.Mesh(new THREE.SphereGeometry(0.06,6,5), pinkMat); nose.position.set(0,1.18,1.14); g.add(nose);
+
+  /* 耳朵按物种 */
+  if(pet.species === '兔子'){
+    var earGeo = new THREE.CapsuleGeometry ? new THREE.CylinderGeometry(0.1,0.13,0.7,6) : new THREE.CylinderGeometry(0.1,0.13,0.7,6);
+    var l = new THREE.Mesh(earGeo, mat); l.position.set(-0.22,1.95,0.5); l.rotation.z=0.15; g.add(l);
+    var r = new THREE.Mesh(earGeo, mat); r.position.set(0.22,1.95,0.5); r.rotation.z=-0.15; g.add(r);
+  } else if(pet.species === '狗'){
+    var deGeo = new THREE.SphereGeometry(0.2,6,5);
+    var dl = new THREE.Mesh(deGeo, darkMat); dl.scale.set(0.6,1.1,0.4); dl.position.set(-0.5,1.45,0.5); g.add(dl);
+    var dr = new THREE.Mesh(deGeo, darkMat); dr.scale.set(0.6,1.1,0.4); dr.position.set(0.5,1.45,0.5); g.add(dr);
+  } else {
+    /* 猫：三角耳 */
+    var ceGeo = new THREE.ConeGeometry(0.2, 0.32, 4);
+    var cl = new THREE.Mesh(ceGeo, mat); cl.position.set(-0.32,1.78,0.5); g.add(cl);
+    var cr = new THREE.Mesh(ceGeo, mat); cr.position.set(0.32,1.78,0.5); g.add(cr);
+  }
+
+  /* 四条腿 */
+  var legGeo = new THREE.CylinderGeometry(0.14,0.14,0.4,6);
+  [[-0.4,-0.55],[0.4,-0.55],[-0.4,0.45],[0.4,0.45]].forEach(function(p){
+    var lg = new THREE.Mesh(legGeo, mat); lg.position.set(p[0],0.2,p[1]); g.add(lg);
+  });
+
+  /* 尾巴 */
+  if(pet.species === '兔子'){
+    var tb = new THREE.Mesh(new THREE.SphereGeometry(0.18,6,5), new THREE.MeshStandardMaterial({color:0xffffff,flatShading:true}));
+    tb.position.set(0,0.55,-0.85); g.add(tb);
+  } else {
+    var tail = new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.12,0.7,6), mat);
+    tail.position.set(0,0.7,-0.85); tail.rotation.x = -0.7; g.add(tail);
+  }
+
+  g.scale.set(scale, scale, scale);
+  return g;
+}
+
+function petBodyColor(sp){
+  if(sp === '猫') return 0x8a8f9c;      // 灰
+  if(sp === '狗') return 0xd8a15a;      // 棕黄
+  return 0xf2f2f5;                       // 兔子白
+}
 /* =========================================================
    微信
    自己一套全屏层 + 导航栈。页面函数统一叫 wxPage_xxx，
