@@ -631,18 +631,19 @@ body.lightmode .wg .cw-d.on{color:#fff}
   --pu:calc(1px * var(--icoscale));
   position:relative;
   display:flex; flex-direction:column;
-  align-items:center; justify-content:space-between;
-  gap:calc(6 * var(--pu));
-  padding:calc(12 * var(--pu)) calc(14 * var(--pu)) calc(14 * var(--pu));
+  align-items:center; justify-content:flex-start;
+  gap:calc(10 * var(--pu));
+  padding:calc(18 * var(--pu)) calc(14 * var(--pu)) calc(14 * var(--pu));
   overflow:hidden;
 }
 /* 内容全部压在背景图和装饰之上 */
 .wg.duow .dw-music,.wg.duow .pw-avatars{position:relative; z-index:1}
 /* 上半区：左 CD 右播放器，横着排 */
 .dw-music{
-  width:100%; flex:1 1 auto; min-height:0;
+  width:100%; flex:0 1 auto; min-height:0;
   display:flex; align-items:center;
   gap:calc(10 * var(--pu));
+  margin-top:calc(8 * var(--pu));
 }
 /* CD：跟着上半区高度走，最多吃 38% 宽 */
 .dw-cd{
@@ -681,20 +682,21 @@ body.lightmode .wg .cw-d.on{color:#fff}
   font-size:calc(11 * var(--pu)); font-weight:600; line-height:1.2;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
-/* 歌词跑马灯：一行装不下就左右来回滑 */
-.dw-lyrbox{
-  width:100%; overflow:hidden;
-  height:calc(12 * var(--pu));
+/* 歌词上下滚动：两行轮流显示，像音乐播放器那样 */
+.dw-lyrics-wrap{
+  width:100%; height:calc(13 * var(--pu)); overflow:hidden; position:relative;
 }
-.dw-lyrin{
-  display:inline-block; white-space:nowrap;
-  font-size:calc(9 * var(--pu)); line-height:calc(12 * var(--pu));
-  opacity:.68;
-  animation:dwRoll 11s ease-in-out infinite alternate;
+.dw-lyrics-scroll{
+  display:flex; flex-direction:column;
+  animation:dwLyrScroll 9s ease-in-out infinite;
 }
-@keyframes dwRoll{
-  0%{transform:translateX(0)}
-  100%{transform:translateX(calc(-100% + 96px))}
+.dw-lyrics-scroll > div{
+  font-size:calc(9 * var(--pu)); line-height:calc(13 * var(--pu));
+  opacity:.68; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+@keyframes dwLyrScroll{
+  0%, 42%{transform:translateY(0)}
+  58%, 100%{transform:translateY(calc(-13 * var(--pu)))}
 }
 /* 进度条 */
 .dw-bar{
@@ -744,13 +746,17 @@ body.lightmode .wg .cw-d.on{color:#fff}
   border-top:calc(1 * var(--pu)) dashed currentColor;
 }
 .dw-sep span{font-size:calc(9 * var(--pu)); flex:0 0 auto}
-/* 下半区头像：比情侣卡小一号，因为上面还有播放器要占地方 */
+/* 下半区头像：比情侣卡小一号，因为上面还有播放器要占地方；拉开间距让排版平均舒服 */
+.wg.duow .pw-avatars{
+  gap:calc(16 * var(--pu));
+  margin-top:calc(6 * var(--pu));
+}
 .wg.duow .pw-ava{
   width:calc(46 * var(--pu));
   height:calc(46 * var(--pu));
 }
 /* 铺了背景图时压得住字 */
-.wg.duow.onimg .dw-song,.wg.duow.onimg .dw-lyrin,
+.wg.duow.onimg .dw-song,.wg.duow.onimg .dw-lyrics-scroll > div,
 .wg.duow.onimg .dw-time,.wg.duow.onimg .pw-ava-ph{
   color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.6);
 }
@@ -2287,10 +2293,14 @@ function wgInner(it, d, hasImg){
     s += '</div>';
     s += '<div class="dw-right">';
     s += '<div class="dw-song">' + esc(d.song || '未知歌曲') + '</div>';
-    /* 歌词跑马灯 */
-    var lyr = [d.lyric1, d.lyric2].filter(function(x){ return x; }).join('　');
-    if(lyr){
-      s += '<div class="dw-lyrbox"><div class="dw-lyrin">' + esc(lyr) + '</div></div>';
+    /* 歌词上下滚动：两行分开，轮流显示 */
+    var ly1 = d.lyric1 || '';
+    var ly2 = d.lyric2 || '';
+    if(ly1 || ly2){
+      s += '<div class="dw-lyrics-wrap"><div class="dw-lyrics-scroll">';
+      s += '<div>' + esc(ly1 || '　') + '</div>';
+      s += '<div>' + esc(ly2 || '　') + '</div>';
+      s += '</div></div>';
     }
     s += '<div class="dw-bar"><div class="dw-fill"></div><div class="dw-dot"></div></div>';
     s += '<div class="dw-time"><span>1:08</span><span>' + esc(d.dur || '3:24') + '</span></div>';
