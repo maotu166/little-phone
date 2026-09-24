@@ -624,6 +624,138 @@ body.lightmode .wg .cw-d.on{color:#fff}
   flex:0 0 auto;
 }
 .mw-heart{ color:#ec4141; }
+
+/* ---------- 双人听（duow）：上半 CD+播放器，下半情侣头像 ----------
+   复用情侣卡的头像/气泡/连线样式，播放器区自己画一套横排的。 */
+.wg.duow .wgin{
+  --pu:calc(1px * var(--icoscale));
+  position:relative;
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:space-between;
+  gap:calc(6 * var(--pu));
+  padding:calc(12 * var(--pu)) calc(14 * var(--pu)) calc(14 * var(--pu));
+  overflow:hidden;
+}
+/* 内容全部压在背景图和装饰之上 */
+.wg.duow .dw-music,.wg.duow .pw-avatars{position:relative; z-index:1}
+/* 上半区：左 CD 右播放器，横着排 */
+.dw-music{
+  width:100%; flex:1 1 auto; min-height:0;
+  display:flex; align-items:center;
+  gap:calc(10 * var(--pu));
+}
+/* CD：跟着上半区高度走，最多吃 38% 宽 */
+.dw-cd{
+  height:88%; aspect-ratio:1/1; max-width:38%;
+  flex:0 0 auto;
+  border-radius:50%;
+  background:rgba(127,127,127,.18);
+  border:calc(1.5 * var(--pu)) solid rgba(255,255,255,.22);
+  overflow:hidden; position:relative;
+  animation:mwSpin 20s linear infinite;
+}
+.dw-cd img{width:100%; height:100%; object-fit:cover; display:block}
+/* CD 中心那个小孔 */
+.dw-cd::after{
+  content:''; position:absolute; top:50%; left:50%;
+  width:22%; height:22%; margin:-11% 0 0 -11%;
+  border-radius:50%;
+  background:rgba(0,0,0,.4);
+  box-shadow:inset 0 0 0 calc(1 * var(--pu)) rgba(255,255,255,.3);
+}
+/* 空 CD 占位：画几圈纹路，别看着像个洞 */
+.dw-cd.empty{
+  background:
+    repeating-radial-gradient(circle at 50% 50%,
+      rgba(255,255,255,.08) 0 calc(2 * var(--pu)),
+      rgba(0,0,0,.14) calc(2 * var(--pu)) calc(4 * var(--pu)));
+}
+/* 右侧播放器整列 */
+.dw-right{
+  flex:1 1 auto; min-width:0;
+  display:flex; flex-direction:column;
+  justify-content:center;
+  gap:calc(3 * var(--pu));
+}
+.dw-song{
+  font-size:calc(11 * var(--pu)); font-weight:600; line-height:1.2;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+/* 歌词跑马灯：一行装不下就左右来回滑 */
+.dw-lyrbox{
+  width:100%; overflow:hidden;
+  height:calc(12 * var(--pu));
+}
+.dw-lyrin{
+  display:inline-block; white-space:nowrap;
+  font-size:calc(9 * var(--pu)); line-height:calc(12 * var(--pu));
+  opacity:.68;
+  animation:dwRoll 11s ease-in-out infinite alternate;
+}
+@keyframes dwRoll{
+  0%{transform:translateX(0)}
+  100%{transform:translateX(calc(-100% + 96px))}
+}
+/* 进度条 */
+.dw-bar{
+  height:calc(3 * var(--pu));
+  background:rgba(127,127,127,.24);
+  border-radius:calc(2 * var(--pu));
+  position:relative;
+  margin-top:calc(1 * var(--pu));
+}
+.dw-fill{
+  position:absolute; left:0; top:0; bottom:0; width:42%;
+  background:#ec4141; border-radius:calc(2 * var(--pu));
+}
+.dw-dot{
+  position:absolute; top:50%; left:42%;
+  width:calc(6 * var(--pu)); height:calc(6 * var(--pu));
+  margin:calc(-3 * var(--pu)) 0 0 calc(-3 * var(--pu));
+  border-radius:50%; background:#fff;
+  box-shadow:0 0 0 calc(1.5 * var(--pu)) #ec4141;
+}
+.dw-time{
+  display:flex; justify-content:space-between;
+  font-size:calc(7 * var(--pu)); opacity:.42; line-height:1;
+}
+/* 控制行 */
+.dw-ctrl{
+  display:flex; align-items:center; justify-content:space-between;
+  margin-top:calc(2 * var(--pu));
+  opacity:.82;
+}
+.dw-ctrl svg{flex:0 0 auto}
+.dw-play{
+  width:calc(18 * var(--pu)); height:calc(18 * var(--pu));
+  border-radius:50%; border:calc(1.4 * var(--pu)) solid currentColor;
+  display:flex; align-items:center; justify-content:center;
+  flex:0 0 auto;
+}
+.dw-heart{color:#ec4141}
+/* 中间那条分隔：虚线加个音符，把上下两半隔开 */
+.dw-sep{
+  width:100%; flex:0 0 auto;
+  display:flex; align-items:center; gap:calc(6 * var(--pu));
+  opacity:.3;
+}
+.dw-sep::before,.dw-sep::after{
+  content:''; flex:1 1 auto;
+  border-top:calc(1 * var(--pu)) dashed currentColor;
+}
+.dw-sep span{font-size:calc(9 * var(--pu)); flex:0 0 auto}
+/* 下半区头像：比情侣卡小一号，因为上面还有播放器要占地方 */
+.wg.duow .pw-ava{
+  width:calc(46 * var(--pu));
+  height:calc(46 * var(--pu));
+}
+/* 铺了背景图时压得住字 */
+.wg.duow.onimg .dw-song,.wg.duow.onimg .dw-lyrin,
+.wg.duow.onimg .dw-time,.wg.duow.onimg .pw-ava-ph{
+  color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.6);
+}
+.wg.duow.onimg .pw-ava-in{border-color:rgba(255,255,255,.85)}
+
 .pw-song-name{
   font-size:calc(10 * var(--pu)); line-height:1.2; opacity:.72;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
@@ -1489,6 +1621,7 @@ var WKIND = {
   note:   { name:'便签卡', sub:'写一句话',   dft:'2x2', hr:true },
   frame:  { name:'相框组', sub:'图配一句话', dft:'4x2', hr:true },
   music:  { name:'音乐卡', sub:'CD转+播放器', dft:'4x2', hr:true },
+  duow:   { name:'双人听', sub:'CD+情侣头像', dft:'4x4', hr:false },
   free:   { name:'自由卡', sub:'自己拼图层', dft:'2x2', hr:true }
 };
 
@@ -2138,6 +2271,59 @@ function wgInner(it, d, hasImg){
     s += '<svg width="11" height="9" viewBox="0 0 12 10"><rect x="0" y="0" width="12" height="1.4" rx=".7" fill="currentColor"/><rect x="0" y="4.3" width="12" height="1.4" rx=".7" fill="currentColor"/><rect x="0" y="8.6" width="8" height="1.4" rx=".7" fill="currentColor"/></svg>';
     s += '</div>';
     s += '</div>';
+    s += '</div>';
+    return s;
+  }
+  if(it.w2 === 'duow'){
+    /* 双人听：上半 CD+播放器，下半两个头像 */
+    var s = '';
+    /* 背景图 */
+    if(d.bg) s += '<div class="pw-bg" style="background-image:url(\'' + d.bg + '\')"></div>';
+    
+    /* 上半区：左 CD 右播放器 */
+    s += '<div class="dw-music">';
+    s += '<div class="dw-cd' + (d.cd ? '' : ' empty') + '">';
+    if(d.cd) s += '<img src="' + d.cd + '">';
+    s += '</div>';
+    s += '<div class="dw-right">';
+    s += '<div class="dw-song">' + esc(d.song || '未知歌曲') + '</div>';
+    /* 歌词跑马灯 */
+    var lyr = [d.lyric1, d.lyric2].filter(function(x){ return x; }).join('　');
+    if(lyr){
+      s += '<div class="dw-lyrbox"><div class="dw-lyrin">' + esc(lyr) + '</div></div>';
+    }
+    s += '<div class="dw-bar"><div class="dw-fill"></div><div class="dw-dot"></div></div>';
+    s += '<div class="dw-time"><span>1:08</span><span>' + esc(d.dur || '3:24') + '</span></div>';
+    /* 控制行 */
+    s += '<div class="dw-ctrl">';
+    s += '<svg class="dw-heart" width="12" height="11" viewBox="0 0 24 22"><path d="M12 21C12 21 2 14.5 2 7.8 2 4.1 5 1.5 8.2 1.5c2 0 3.2 1 3.8 1.9.6-.9 1.8-1.9 3.8-1.9C19 1.5 22 4.1 22 7.8 22 14.5 12 21 12 21z" fill="currentColor"/></svg>';
+    s += '<svg width="11" height="9" viewBox="0 0 12 10"><path d="M11 0 L2 5 L11 10 z" fill="currentColor"/><rect x="0" y="0" width="1.4" height="10" rx=".7" fill="currentColor"/></svg>';
+    s += '<div class="dw-play"><svg width="6" height="7" viewBox="0 0 6 7"><path d="M0 0 L6 3.5 L0 7 z" fill="currentColor"/></svg></div>';
+    s += '<svg width="11" height="9" viewBox="0 0 12 10"><path d="M1 0 L10 5 L1 10 z" fill="currentColor"/><rect x="10.6" y="0" width="1.4" height="10" rx=".7" fill="currentColor"/></svg>';
+    s += '<svg width="11" height="9" viewBox="0 0 12 10"><rect x="0" y="0" width="12" height="1.4" rx=".7" fill="currentColor"/><rect x="0" y="4.3" width="12" height="1.4" rx=".7" fill="currentColor"/><rect x="0" y="8.6" width="8" height="1.4" rx=".7" fill="currentColor"/></svg>';
+    s += '</div>';
+    s += '</div>';
+    s += '</div>';
+    
+    /* 分隔线 */
+    s += '<div class="dw-sep"><span>♪</span></div>';
+    
+    /* 下半区：双头像 */
+    s += '<div class="pw-avatars">';
+    [1, 2].forEach(function(n){
+      if(n === 2) s += pwLinkHTML();
+      var im = d['img' + n] || '';
+      var say = d['say' + n] || '';
+      var kao = d['kao' + n] || '';
+      s += '<div class="pw-ava" data-slot="' + n + '">';
+      s += '<div class="pw-ava-in">';
+      if(im) s += '<div class="pw-ava-img" style="background-image:url(\'' + im + '\')"></div>';
+      else s += '<div class="pw-ava-ph">点击<br>更换</div>';
+      s += '</div>';
+      if(say) s += '<div class="pw-say pw-say-' + (n === 1 ? 'l' : 'r') + '">' + esc(say) + '</div>';
+      if(kao) s += '<div class="pw-kao">' + esc(kao) + '</div>';
+      s += '</div>';
+    });
     s += '</div>';
     return s;
   }
@@ -4502,8 +4688,9 @@ function editWidget(k){
     h += '<div class="sub" style="margin-top:10px">' + kind.name + ' · ' + it.w + '×' + it.h + ' 格</div>';
     h += '</div>';
 
-    /* 自由卡因为渲染自己完全管，不需要整卡的那个基础图片。把底部的这个大图区收了 */
-    if(it.w2 !== 'pairw' && it.w2 !== 'free'){
+    /* 自由卡因为渲染自己完全管，不需要整卡的那个基础图片。把底部的这个大图区收了。
+       情侣卡和双人听都走自己的头像/封面/背景，也不要这块。 */
+    if(it.w2 !== 'pairw' && it.w2 !== 'free' && it.w2 !== 'duow'){
       h += '<div class="card"><h3>图片</h3>';
       h += '<button class="btn" id="wg-pick">' + (d.img ? '换一张' : '挑一张图') + '</button>';
       if(d.img){
@@ -4598,6 +4785,69 @@ function editWidget(k){
         '<button class="btn" id="mw-save" style="margin-top:9px">存好</button>' +
         '<div class="hint" style="margin-top:9px">歌名留空显示「未知歌曲」。歌词留空就不显示那一行。</div>' +
         '</div>';
+    }
+
+    if(it.w2 === 'duow'){
+      /* 双人听：CD封面 + 歌名歌词 + 两个头像 + 气泡 + 背景图，全都要 */
+      h += '<div class="card"><h3>CD封面</h3>';
+      h += '<div class="pwbgbox">' +
+             (d.cd ? '<img class="pwbgpv" src="' + d.cd + '">' : '<div class="pwbgpv empty">还没挑封面</div>') +
+           '</div>';
+      h += '<button class="btn" id="mw-cdpick" style="margin-top:9px">' + (d.cd ? '换一张' : '挑一张图') + '</button>';
+      if(d.cd) h += '<button class="btn" id="mw-cdclr" style="margin-top:7px">去掉封面</button>';
+      h += '<input type="file" id="mw-cdfile" accept="image/*" style="display:none">';
+      h += '<div class="hint" style="margin-top:9px">按 1:1 裁成方的，会自动切圆并且一直慢慢转。</div>';
+      h += '</div>';
+
+      h += '<div class="card"><h3>歌名和歌词</h3>' +
+        '<input class="ipt" id="mw-song" maxlength="16" placeholder="歌名" value="' + esc(d.song || '') + '">' +
+        '<input class="ipt" id="mw-lyric1" maxlength="20" placeholder="第一行歌词" value="' + esc(d.lyric1 || '') + '" style="margin-top:9px">' +
+        '<input class="ipt" id="mw-lyric2" maxlength="20" placeholder="第二行歌词" value="' + esc(d.lyric2 || '') + '" style="margin-top:9px">' +
+        '<input class="ipt" id="mw-dur" maxlength="6" placeholder="总时长，比如 3:24" value="' + esc(d.dur || '') + '" style="margin-top:9px">' +
+        '<button class="btn" id="mw-save" style="margin-top:9px">存好</button>' +
+        '<div class="hint" style="margin-top:9px">两行歌词会拼成一句，在卡上来回滑。</div>' +
+        '</div>';
+
+      h += '<div class="card"><h3>两个头像</h3>';
+      [1, 2].forEach(function(n){
+        var cur2 = d['img' + n] || '';
+        h += '<div style="margin-top:' + (n === 1 ? '0' : '12px') + '">';
+        h += '<div class="sub">头像 ' + n + (cur2 ? '' : ' · 还是空的') + '</div>';
+        h += '<button class="btn" data-pwpick="' + n + '" style="margin-top:7px">' +
+               (cur2 ? '换一张' : '挑一张图') + '</button>';
+        if(cur2){
+          h += '<button class="btn" data-pwclr="' + n + '" style="margin-top:7px">去掉这张</button>';
+        }
+        h += '</div>';
+      });
+      h += '<input type="file" id="pw-avafile" accept="image/*" style="display:none">';
+      h += '<div class="hint" style="margin-top:9px">头像按 1:1 裁，裁成方的才填得满圆圈。</div>';
+      h += '</div>';
+
+      h += '<div class="card"><h3>对话框</h3>' +
+        '<input class="ipt" id="wg-say1" maxlength="6" placeholder="左边说什么" value="' + esc(d.say1 || '') + '">' +
+        '<input class="ipt" id="wg-say2" maxlength="6" placeholder="右边说什么" value="' + esc(d.say2 || '') + '" style="margin-top:9px">' +
+        '<div class="hint" style="margin-top:9px">三四个字最好看。留空就不显示这个气泡。</div>' +
+        '</div>';
+
+      h += '<div class="card"><h3>小颜文字</h3>' +
+        '<input class="ipt" id="wg-kao1" maxlength="8" placeholder="左边右下角" value="' + esc(d.kao1 || '') + '">' +
+        '<input class="ipt" id="wg-kao2" maxlength="8" placeholder="右边右下角" value="' + esc(d.kao2 || '') + '" style="margin-top:9px">' +
+        '<button class="btn" id="wg-pwsave" style="margin-top:9px">存好气泡</button>' +
+        '<div class="hint" style="margin-top:9px">比如 ♡ 或者 (๑•̀ㅂ•́)。留空就不显示。</div>' +
+        '</div>';
+
+      h += '<div class="card"><h3>背景图</h3>';
+      h += '<div class="pwbgbox">' +
+             (d.bg ? '<img class="pwbgpv" src="' + d.bg + '">' : '<div class="pwbgpv empty">还没有背景图</div>') +
+           '</div>';
+      h += '<button class="btn" id="pw-bgpick" style="margin-top:9px">' + (d.bg ? '换一张' : '挑一张图') + '</button>';
+      if(d.bg){
+        h += '<button class="btn" id="pw-bgclr" style="margin-top:7px">去掉背景图</button>';
+      }
+      h += '<input type="file" id="pw-bgfile" accept="image/*" style="display:none">';
+      h += '<div class="hint" style="margin-top:9px">背景垫在最底层，不会挡住播放器和头像。</div>';
+      h += '</div>';
     }
 
     if(it.w2 === 'free'){
@@ -4726,8 +4976,25 @@ function editWidget(k){
         dd.song   = (body.querySelector('#mw-song').value || '').trim();
         dd.lyric1 = (body.querySelector('#mw-lyric1').value || '').trim();
         dd.lyric2 = (body.querySelector('#mw-lyric2').value || '').trim();
+        /* 双人听多一个总时长字段，音乐卡没有这个输入框所以要判空 */
+        var durEl = body.querySelector('#mw-dur');
+        if(durEl) dd.dur = (durEl.value || '').trim();
         if(!saveWG()){ toast('存不下了'); return; }
         redraw(); toast('存好了');
+      };
+    }
+
+    /* 双人听的气泡单独一个存好按钮：say1/say2/kao1/kao2 */
+    var pwsave = body.querySelector('#wg-pwsave');
+    if(pwsave){
+      pwsave.onclick = function(){
+        var dd = wgData(k);
+        ['say1','say2','kao1','kao2'].forEach(function(fd){
+          var el = body.querySelector('#wg-' + fd);
+          if(el) dd[fd] = (el.value || '').trim();
+        });
+        if(!saveWG()){ toast('存不下了'); return; }
+        redraw(); toast('气泡存好了');
       };
     }
 
@@ -4925,10 +5192,21 @@ function addWidget(si, wkind){
     pd.kao1 = '^ω^';   pd.kao2 = '>ㅅ<';
     saveWG();
   }
+  /* 双人听同理，顺手把歌名和歌词也垫上，不然一片空白 */
+  if(wkind === 'duow'){
+    var dd2 = wgData(it.k);
+    dd2.song = '给你听的歌';
+    dd2.lyric1 = '这句歌词我想了很久';
+    dd2.lyric2 = '还是决定放给你听';
+    dd2.dur = '3:24';
+    dd2.say1 = '一起听'; dd2.say2 = '好呀';
+    dd2.kao1 = '♪';     dd2.kao2 = '♡';
+    saveWG();
+  }
   saveLayout();
   drawScreens(); drawDock(); gotoScreen(si);
   toast('加了张' + WKIND[wkind].name);
-  if(wkind === 'photo' || wkind === 'frame' || wkind === 'pairw') editWidget(it.k);
+  if(wkind === 'photo' || wkind === 'frame' || wkind === 'pairw' || wkind === 'duow') editWidget(it.k);
 }
 
 /* 挑卡片类型 */
