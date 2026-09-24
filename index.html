@@ -2727,11 +2727,12 @@ function dragEnd(x, y){
   var arrT = L.screens[t.si];
   var skipT = (from.kind === 'screen' && from.si === t.si) ? item : null;
 
-  /* 先试挤位：图标落到有东西的格上，后面的往后串（真手机那种手感） */
+  /* 先试挤位：落到有东西的格上，后面的往后串（真手机那种手感）
+     卡片和图标都走这条路，只有从 Dock 拖出来的图标要先造个带坐标的对象 */
   var pushed = false;
-  if(!wk){
+  {
     var dragItem = item;
-    if(from.kind === 'dock'){
+    if(!wk && from.kind === 'dock'){
       /* 从 Dock 拖回桌面：先造一个带坐标的图标对象再参与串位 */
       dragItem = { t:'a', id:id, x:t.x, y:t.y, w:1, h:1 };
     }
@@ -2743,7 +2744,7 @@ function dragEnd(x, y){
       srcArr.splice(si0, 1);
     }
     if(pushInsert(t.si, dragItem, t.x, t.y, from)){
-      if(from.kind === 'dock') L.dock.splice(from.index, 1);
+      if(!wk && from.kind === 'dock') L.dock.splice(from.index, 1);
       pushed = true;
     }else if(from.kind === 'screen' && from.si !== t.si){
       /* 挤位没成，把摘掉的放回去，走下面老逻辑 */
