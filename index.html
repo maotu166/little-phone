@@ -248,19 +248,27 @@ body.haswp #phone{background:transparent}
   height:100%;
   scroll-snap-align:center;
   scroll-snap-stop:always;
-  padding:10px 16px 6px;
-  overflow-y:auto;
+  padding:8px 14px 4px;
+  /* 一屏一页：只左右滑，纵向死锁不许滚 */
+  overflow-y:hidden;
+  overflow-x:hidden;
   scrollbar-width:none;
+  display:flex; flex-direction:column;
+  min-height:0;
 }
 .screen::-webkit-scrollbar{display:none}
 
 .grid{
   display:grid;
   grid-template-columns:repeat(4,1fr);
-  --cellh:calc(48px * var(--icoscale) + 20px);
-  grid-auto-rows:var(--cellh);
-  gap:12px 8px;
-  align-content:start;
+  /* 7 行平分可用高度，不再用固定行高，所以永远塞得下一屏 */
+  grid-template-rows:repeat(7,1fr);
+  gap:calc(6px * var(--icoscale)) calc(6px * var(--icoscale));
+  align-content:stretch;
+  flex:1 1 auto;
+  min-height:0;
+  height:100%;
+  overflow:hidden;
 }
 
 /* 空格子：平时透明只当落点，整理态露出虚线 */
@@ -1524,14 +1532,9 @@ function occupied(arr, rect, skip){
 function inBounds(rect){
   return rect.x >= 0 && rect.y >= 0 && rect.x + rect.w <= GCOL && rect.w >= 1 && rect.h >= 1;
 }
-/* 这一屏用到的行数，至少 GROW_MIN */
+/* 固定 7 行一屏，不再动态扩展 */
 function screenRows(arr){
-  var mx = 0;
-  for(var i=0;i<arr.length;i++){
-    var b = arr[i].y + arr[i].h;
-    if(b > mx) mx = b;
-  }
-  return Math.max(GROW_MIN, mx + 1);
+  return 7;
 }
 /* 从上往下找第一个能放下 w×h 的空位，找不到就摆到最底下新起一行 */
 function findFree(arr, w, h, skip){
@@ -1929,8 +1932,7 @@ function drawScreens(){
 
     var grid = document.createElement('div');
     grid.className = 'grid';
-    var rows = screenRows(arr);
-    grid.style.gridTemplateRows = 'repeat(' + rows + ', var(--cellh))';
+    var rows = 7; /* 固定 7 行，CSS 里已经写死 */
     grid.dataset.rows = rows;
 
     /* 先铺一层空格子当落点，整理态才看得见 */
