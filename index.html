@@ -4362,7 +4362,24 @@ function loadGames(){
   return { ver:1, list:[ { id:'pet', name:'电子宠物', desc:'领养一只宠物，照顾它吧' } ] };
 }
 function saveGames(g){ try{ localStorage.setItem(LS_GAMES, JSON.stringify(g)); }catch(e){} }
-
+function renderGame(body){
+  var games = loadGames();
+  var s = '';
+  games.list.forEach(function(g){
+    s += '<div class="card row" style="cursor:pointer" data-gid="' + esc(g.id) + '">' +
+         '<div style="flex:1"><div style="font-weight:600">' + esc(g.name) + '</div>' +
+         '<div class="hint">' + esc(g.desc) + '</div></div>' +
+         '<div style="color:rgba(255,255,255,.35)">&#9656;</div></div>';
+  });
+  body.innerHTML = s;
+  body.querySelectorAll('[data-gid]').forEach(function(el){
+    el.onclick = function(){ openGameSub(el.dataset.gid); };
+  });
+}
+function openGameSub(id){
+  if(id === 'pet'){ renderPet(openWin('电子宠物', '')); }
+  else{ toast('游戏「' + id + '」还没做'); }
+}
 /* ============================================================
    电子宠物 v2 · 3D建模 + 成长 + 习性 + 社交 + 成就
    数据模型（LS_PET, ver:2）:
