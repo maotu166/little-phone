@@ -4421,18 +4421,28 @@ var PET_BEHAVIORS = {
 
 /* ---- 成就库 ---- */
 var PET_ACHIEVEMENTS = {
-  first_feed:   { name:'第一口饭', desc:'第一次喂食', icon:'🍚' },
-  first_play:   { name:'初次玩耍', desc:'第一次陪它玩', icon:'🎾' },
-  first_wash:   { name:'爱干净', desc:'第一次帮它洗澡', icon:'🛁' },
-  first_edu:    { name:'循循善诱', desc:'第一次教育它', icon:'📖' },
-  grow_1:       { name:'长大一点点', desc:'成长到成长期', icon:'🌱' },
-  grow_2:       { name:'终于成年了', desc:'成长到成年', icon:'🌳' },
-  first_outing: { name:'第一次出门', desc:'第一次独自外出', icon:'🚪' },
-  first_friend: { name:'交到朋友了', desc:'第一次交到朋友', icon:'🤝' },
-  social_5:     { name:'社交达人', desc:'交到5个朋友', icon:'🎉' },
-  care_7:       { name:'尽职铲屎官', desc:'连续照顾7天', icon:'📅' },
-  full_love:    { name:'最好的朋友', desc:'好感度拉满', icon:'💖', he:true },
-  depressed:    { name:'永远的遗憾', desc:'因缺乏照顾抑郁离世', icon:'🕊️', be:true }
+  first_feed:   { name:'第一口', desc:'它吃到了你喂的第一顿', icon:'🍚', hint:'跟填肚子有关' },
+  first_play:   { name:'玩疯了', desc:'你陪它疯了头一场', icon:'🎾', hint:'关于一起玩' },
+  first_wash:   { name:'搓澡日', desc:'你给它搓了第一次澡', icon:'🛁', hint:'干净这回事' },
+  first_edu:    { name:'立规矩', desc:'你头一回教它做规矩', icon:'📖', hint:'谁说了算' },
+  grow_1:       { name:'拔节', desc:'它悄悄长成了半大孩子', icon:'🌱', hint:'个头好像变了' },
+  grow_2:       { name:'翅膀硬了', desc:'它终于长成大人模样', icon:'🌳', hint:'长大以后' },
+  first_outing: { name:'离家出走五分钟', desc:'它头一回自己溜出了门', icon:'🚪', hint:'往外跑那次' },
+  first_friend: { name:'搭上话了', desc:'它交到了第一个朋友', icon:'🤝', hint:'不再是自己一个' },
+  social_5:     { name:'社牛本牛', desc:'它凑齐了五个朋友', icon:'🎉', hint:'朋友一大把' },
+  care_7:       { name:'一周没撒手', desc:'你连着七天没落下它', icon:'📅', hint:'关于坚持' },
+  full_love:    { name:'非你不可', desc:'它眼里只剩下你了', icon:'💖', he:true, hint:'感情满上的时候' },
+  co_raise:     { name:'二人同盟', desc:'你和Q一块把它拉扯大', icon:'🤍', hint:'不是你一个人在养' },
+  depressed:    { name:'没能留住', desc:'它熬不过冷落，走了', icon:'🕊️', be:true, hint:'你最不想看到的' }
+};
+
+/* ---- 共养（和Q一起养）---- */
+var QCARE_CD = 45000;        // Q两次代养的最小间隔(ms)
+var QCARE_THRESHOLD = 28;    // 某项数值低于此值时Q出手
+var QCARE_ACTS = {
+  feed: { key:'hunger', add:22, moodAdd:3, txt:['给它添了点粮','看它饿了，喂了顿饭','怕它饿着，先喂上'] },
+  wash: { key:'clean',  add:25, moodAdd:3, txt:['嫌它脏，拎去洗了','顺手帮它擦干净了','给它洗了个澡'] },
+  play: { key:'mood',   add:16, moodAdd:0, txt:['陪它玩了会儿','逗了逗它','看它闷，陪它疯了一阵'] }
 };
 
 /* ---- 存取 ---- */
@@ -4452,7 +4462,7 @@ function migratePetV1(o){
     hunger:o.hunger, mood:o.mood, clean:o.clean,
     stage:0, exp:0, lastTs:o.lastTs||Date.now(), born:o.born||Date.now(),
     alive:true, caretaker:'我', behavior:null, friends:[], outing:null,
-    achievements:[], careDays:0, lastCareDay:''
+    achievements:[], careDays:0, lastCareDay:'', qLastTs:0, qLog:[]
   };
   savePet(np); return np;
 }
@@ -4475,6 +4485,9 @@ function renderPet(body){
   s += '<div class="card center" style="padding:14px 18px">';
   s += '<div style="font-size:17px;font-weight:600">' + esc(pet.name) + '</div>';
   s += '<div class="sub">' + pet.species + ' · ' + stName + ' · 陪伴' + petAgeDays(pet) + '天</div>';
+  if(pet.caretaker === '一起'){
+    s += '<div class="hint" style="margin-top:4px;color:#ff9ec4">🤍 和 Q 一起养</div>';
+  }
   /* 成长进度条 */
   if(pet.stage < 2){
     var need = PET_STAGE_EXP[pet.stage+1], cur = pet.exp;
@@ -4502,6 +4515,9 @@ function renderPet(body){
   }
   s += '<button class="btn" id="pet-social" style="flex:1;min-width:70px">社交记录</button>';
   s += '<button class="btn" id="pet-ach" style="flex:1;min-width:70px">成就</button>';
+  if(pet.caretaker === '一起'){
+    s += '<button class="btn" id="pet-qcare" style="flex:1;min-width:70px">Q的照顾</button>';
+  }
   s += '</div>';
   /* 外出状态 */
   if(pet.outing){
@@ -4519,6 +4535,7 @@ function renderPet(body){
   var eduBtn = body.querySelector('#pet-edu'); if(eduBtn) eduBtn.onclick = function(){ eduPet(body, pet); };
   body.querySelector('#pet-social').onclick = function(){ petSocialView(body, pet); };
   body.querySelector('#pet-ach').onclick = function(){ petAchView(body, pet); };
+  var qcBtn = body.querySelector('#pet-qcare'); if(qcBtn) qcBtn.onclick = function(){ petQCareView(body, pet); };
 
   if(winTimer) clearInterval(winTimer);
   winTimer = setInterval(function(){ petLoop(body, pet); }, 1000);
@@ -4574,7 +4591,7 @@ function confirmAdopt(body, sp){
       hunger:90, mood:90, clean:90, stage:0, exp:0,
       lastTs:Date.now(), born:Date.now(), alive:true, caretaker:ct,
       behavior:null, friends:[], outing:null, achievements:[],
-      careDays:1, lastCareDay:petToday()
+      careDays:1, lastCareDay:petToday(), qLastTs:0, qLog:[]
     };
     savePet(pet);
     renderPet(openWin('电子宠物', ''));
@@ -4598,19 +4615,29 @@ function petGraveView(body, pet){
 }
 
 /* ---- 数值 tick ---- */
+var TICK_OFFLINE_CAP = 8 * 3600;   // 离线最多按8小时结算，避免隔天回来直接饿死
 function tickPet(pet){
   var now = Date.now();
   var dt = (now - pet.lastTs) / 1000;
   if(dt <= 0){ return; }
-  pet.hunger = Math.max(0, pet.hunger - dt / 360);
-  pet.mood   = Math.max(0, pet.mood - dt / 720);
-  pet.clean  = Math.max(0, pet.clean - dt / 540);
-  /* 饥饿或脏会额外拖累心情 */
-  if(pet.hunger < 20 || pet.clean < 20){ pet.mood = Math.max(0, pet.mood - dt / 300); }
-  /* 状态好就积累成长值 */
-  if(pet.hunger > 40 && pet.mood > 40 && pet.clean > 40 && pet.stage < 2){
-    pet.exp += dt / 60;   // 状态好时每分钟+1exp
-    checkGrow(pet);
+  /* 离线时长封顶：人不可能盯着看，隔太久不该一次性掏空 */
+  var capped = Math.min(dt, TICK_OFFLINE_CAP);
+  /* 共养模式：把这段时间切成若干段，让Q能在离线期间多次出手救场 */
+  var isCo = (pet.caretaker === '一起');
+  if(isCo && capped > QCARE_CD/1000){
+    var step = QCARE_CD / 1000;          // 每段=一次Q照顾冷却
+    var remain = capped, cursor = pet.lastTs;
+    while(remain > 0){
+      var seg = Math.min(step, remain);
+      cursor += seg * 1000;
+      applyDecay(pet, seg);
+      qCarePet(pet, cursor);             // 这一段结束时Q检查一次
+      if(!pet.alive) break;
+      remain -= seg;
+    }
+  } else {
+    applyDecay(pet, capped);
+    qCarePet(pet, now);
   }
   pet.lastTs = now;
   /* 连续照顾天数 */
@@ -4621,11 +4648,54 @@ function tickPet(pet){
     else if(gap > 1){ pet.careDays = 1; }
     pet.lastCareDay = td;
   }
-  /* 死亡判定 */
+  /* 死亡判定：需要心情持续见底一段时间，而不是瞬间归零 */
   if(pet.mood <= 0 && pet.alive){
-    pet.alive = false;
-    grantAch(pet, 'depressed');
+    pet.moodZeroTs = pet.moodZeroTs || now;
+    if(now - pet.moodZeroTs >= 4 * 3600 * 1000){   // 心情见底累计满4小时才离世
+      pet.alive = false;
+      grantAch(pet, 'depressed');
+    }
+  } else {
+    pet.moodZeroTs = 0;
   }
+  savePet(pet);
+}
+
+/* 单段数值衰减 */
+function applyDecay(pet, dt){
+  pet.hunger = Math.max(0, pet.hunger - dt / 360);
+  pet.mood   = Math.max(0, pet.mood - dt / 720);
+  pet.clean  = Math.max(0, pet.clean - dt / 540);
+  if(pet.hunger < 20 || pet.clean < 20){ pet.mood = Math.max(0, pet.mood - dt / 300); }
+  if(pet.hunger > 40 && pet.mood > 40 && pet.clean > 40 && pet.stage < 2){
+    pet.exp += dt / 60;
+    checkGrow(pet);
+  }
+}
+
+/* ---- 共养：Q主动照顾 ---- */
+function qCarePet(pet, now){
+  if(pet.caretaker !== '一起' || !pet.alive) return;
+  if(pet.outing) return;                       // 出门了不管
+  if(!pet.qLastTs) pet.qLastTs = 0;
+  if(now - pet.qLastTs < QCARE_CD) return;      // 冷却中
+  /* 找最急需处理的那一项 */
+  var act = null;
+  if(pet.hunger < QCARE_THRESHOLD) act = 'feed';
+  else if(pet.clean < QCARE_THRESHOLD) act = 'wash';
+  else if(pet.mood < QCARE_THRESHOLD) act = 'play';
+  if(!act) return;
+  var cfg = QCARE_ACTS[act];
+  pet[cfg.key] = Math.min(100, pet[cfg.key] + cfg.add);
+  if(cfg.moodAdd) pet.mood = Math.min(100, pet.mood + cfg.moodAdd);
+  pet.qLastTs = now;
+  /* 记一条Q的照顾日志，最多留20条 */
+  if(!pet.qLog) pet.qLog = [];
+  var txt = cfg.txt[Math.floor(Math.random()*cfg.txt.length)];
+  pet.qLog.unshift({ txt:'Q ' + txt, ts:now });
+  if(pet.qLog.length > 20) pet.qLog.length = 20;
+  /* 两人合力照顾到一定次数给成就 */
+  if(pet.qLog.length >= 3) grantAch(pet, 'co_raise');
   savePet(pet);
 }
 
@@ -4781,6 +4851,22 @@ function petSocialView(body, pet){
   body.querySelector('#pet-back').onclick = function(){ renderPet(openWin('电子宠物','')); };
 }
 
+function petQCareView(body, pet){
+  var s = '<div class="card row" style="cursor:pointer" id="pet-back"><span style="flex:1">‹ 返回</span></div>';
+  var log = pet.qLog || [];
+  s += '<div class="card"><h3>Q 的照顾</h3><div class="hint">你不在的时候，Q 会替你照看它。它状态掉太低时 Q 会主动出手。</div></div>';
+  if(log.length === 0){
+    s += '<div class="card center"><div class="hint">Q 还没出手过。<br>等它哪项状态掉下去，Q 就会补上，这里会留下记录。</div></div>';
+  } else {
+    log.forEach(function(it){
+      s += '<div class="card row"><span style="flex:1">🤍 ' + esc(it.txt) + '</span>' +
+           '<span class="hint">' + petFmtDate(it.ts) + '</span></div>';
+    });
+  }
+  body.innerHTML = s;
+  body.querySelector('#pet-back').onclick = function(){ renderPet(openWin('电子宠物','')); };
+}
+
 /* ---- 成就 ---- */
 function grantAch(pet, id){
   if(!pet.achievements) pet.achievements = [];
@@ -4788,21 +4874,24 @@ function grantAch(pet, id){
   pet.achievements.push(id);
   savePet(pet);
   var a = PET_ACHIEVEMENTS[id];
-  if(a) toast('🏆 解锁成就：' + a.name);
+  if(a) toast('🏆 解锁「' + a.name + '」');
 }
 
 function petAchView(body, pet){
   var s = '<div class="card row" style="cursor:pointer" id="pet-back"><span style="flex:1">‹ 返回</span></div>';
   var got = pet.achievements || [];
-  s += '<div class="card"><h3>成就</h3><div class="hint">已解锁 ' + got.length + '/' + Object.keys(PET_ACHIEVEMENTS).length + '</div></div>';
+  var total = Object.keys(PET_ACHIEVEMENTS).length;
+  s += '<div class="card"><h3>成就</h3><div class="hint">已解锁 ' + got.length + '/' + total + '　·　名字要自己触发才看得到</div></div>';
   Object.keys(PET_ACHIEVEMENTS).forEach(function(id){
     var a = PET_ACHIEVEMENTS[id];
     var has = got.indexOf(id) >= 0;
-    var tag = a.he ? '<span class="tag" style="background:rgba(255,120,180,.25)">HE</span>' : a.be ? '<span class="tag" style="background:rgba(120,120,140,.3)">BE</span>' : '';
-    s += '<div class="card row" style="opacity:' + (has?'1':'.4') + '">' +
-         '<span style="font-size:22px;margin-right:10px">' + (has?a.icon:'🔒') + '</span>' +
-         '<span style="flex:1"><div style="font-weight:600">' + esc(a.name) + ' ' + tag + '</div>' +
-         '<div class="hint">' + esc(a.desc) + '</div></span></div>';
+    var tag = has ? (a.he ? '<span class="tag" style="background:rgba(255,120,180,.25)">HE</span>' : a.be ? '<span class="tag" style="background:rgba(120,120,140,.3)">BE</span>' : '') : '';
+    var title = has ? esc(a.name) : '？？？';
+    var sub = has ? esc(a.desc) : '未解锁 · ' + esc(a.hint || '藏着的');
+    s += '<div class="card row" style="opacity:' + (has?'1':'.55') + '">' +
+         '<span style="font-size:22px;margin-right:10px">' + (has?a.icon:'❓') + '</span>' +
+         '<span style="flex:1"><div style="font-weight:600">' + title + ' ' + tag + '</div>' +
+         '<div class="hint">' + sub + '</div></span></div>';
   });
   body.innerHTML = s;
   body.querySelector('#pet-back').onclick = function(){ renderPet(openWin('电子宠物','')); };
@@ -4891,69 +4980,125 @@ function petDispose3D(){
   pet3d = null;
 }
 
-/* ---- 用几何体拼低多边形动物 ---- */
+/* ---- 用几何体拼可爱 Q 版动物（大头圆身、水汪汪眼、腮红）---- */
 function buildPetModel(pet){
   var g = new THREE.Group();
   var scale = PET_STAGE_SCALE[pet.stage] || 1;
   var col = petBodyColor(pet.species);
-  var mat = new THREE.MeshStandardMaterial({ color:col, flatShading:true, roughness:0.9 });
-  var darkMat = new THREE.MeshStandardMaterial({ color:0x2b2b33, flatShading:true, roughness:0.9 });
-  var pinkMat = new THREE.MeshStandardMaterial({ color:0xffb3c1, flatShading:true, roughness:0.9 });
+  var bellyCol = petBellyColor(pet.species);
+  var mat = new THREE.MeshStandardMaterial({ color:col, flatShading:false, roughness:0.65, metalness:0.02 });
+  var bellyMat = new THREE.MeshStandardMaterial({ color:bellyCol, flatShading:false, roughness:0.6 });
+  var darkMat = new THREE.MeshStandardMaterial({ color:0x3a3340, flatShading:false, roughness:0.35 });
+  var whiteMat = new THREE.MeshStandardMaterial({ color:0xffffff, roughness:0.25 });
+  var pinkMat = new THREE.MeshStandardMaterial({ color:0xff9fb6, flatShading:false, roughness:0.55 });
+  var blushMat = new THREE.MeshStandardMaterial({ color:0xffb0c4, transparent:true, opacity:0.55, roughness:0.9 });
 
-  /* 身体 */
-  var body = new THREE.Mesh(new THREE.SphereGeometry(0.8, 8, 6), mat);
-  body.scale.set(1, 0.85, 1.15); body.position.y = 0.6;
+  /* 身体：小而圆，略微下蹲的水滴形 */
+  var body = new THREE.Mesh(new THREE.SphereGeometry(0.62, 24, 20), mat);
+  body.scale.set(1, 0.92, 1); body.position.y = 0.5;
   g.add(body);
-  /* 头 */
-  var head = new THREE.Mesh(new THREE.SphereGeometry(0.62, 8, 6), mat);
-  head.position.set(0, 1.25, 0.55);
+  /* 肚皮浅色贴片 */
+  var belly = new THREE.Mesh(new THREE.SphereGeometry(0.44, 20, 16), bellyMat);
+  belly.scale.set(0.82, 0.9, 0.7); belly.position.set(0, 0.42, 0.36);
+  g.add(belly);
+
+  /* 头：大，占比夸张才可爱 */
+  var head = new THREE.Mesh(new THREE.SphereGeometry(0.7, 26, 22), mat);
+  head.position.set(0, 1.32, 0.16);
   g.add(head);
-  /* 眼睛 */
-  var eyeGeo = new THREE.SphereGeometry(0.09, 6, 5);
-  var e1 = new THREE.Mesh(eyeGeo, darkMat); e1.position.set(-0.22, 1.32, 1.08); g.add(e1);
-  var e2 = new THREE.Mesh(eyeGeo, darkMat); e2.position.set(0.22, 1.32, 1.08); g.add(e2);
-  /* 鼻子 */
-  var nose = new THREE.Mesh(new THREE.SphereGeometry(0.06,6,5), pinkMat); nose.position.set(0,1.18,1.14); g.add(nose);
+  /* 脸颊浅色（狗/兔）*/
+  if(pet.species !== '猫'){
+    var muzzle = new THREE.Mesh(new THREE.SphereGeometry(0.34, 18, 14), bellyMat);
+    muzzle.scale.set(1, 0.78, 0.8); muzzle.position.set(0, 1.14, 0.66);
+    g.add(muzzle);
+  }
+
+  /* 水汪汪大眼：黑眼球 + 白色高光 */
+  function makeEye(x){
+    var eye = new THREE.Mesh(new THREE.SphereGeometry(0.14, 16, 14), darkMat);
+    eye.position.set(x, 1.4, 0.74);
+    g.add(eye);
+    var hi = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), whiteMat);
+    hi.position.set(x + 0.04, 1.46, 0.86);
+    g.add(hi);
+    var hi2 = new THREE.Mesh(new THREE.SphereGeometry(0.025, 8, 6), whiteMat);
+    hi2.position.set(x - 0.04, 1.36, 0.86);
+    g.add(hi2);
+  }
+  makeEye(-0.26); makeEye(0.26);
+
+  /* 鼻子 + 小嘴 */
+  var nose = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 10), pinkMat);
+  nose.position.set(0, 1.22, 0.86); nose.scale.set(1.2,0.9,0.8);
+  g.add(nose);
+
+  /* 腮红：两坨半透明粉 */
+  var b1 = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 10), blushMat);
+  b1.scale.set(1, 0.6, 0.4); b1.position.set(-0.42, 1.2, 0.62); g.add(b1);
+  var b2 = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 10), blushMat);
+  b2.scale.set(1, 0.6, 0.4); b2.position.set(0.42, 1.2, 0.62); g.add(b2);
 
   /* 耳朵按物种 */
   if(pet.species === '兔子'){
-    var earGeo = new THREE.CapsuleGeometry ? new THREE.CylinderGeometry(0.1,0.13,0.7,6) : new THREE.CylinderGeometry(0.1,0.13,0.7,6);
-    var l = new THREE.Mesh(earGeo, mat); l.position.set(-0.22,1.95,0.5); l.rotation.z=0.15; g.add(l);
-    var r = new THREE.Mesh(earGeo, mat); r.position.set(0.22,1.95,0.5); r.rotation.z=-0.15; g.add(r);
+    var earGeo = new THREE.CapsuleGeometry ? new THREE.CapsuleGeometry(0.11, 0.5, 6, 12) : new THREE.CylinderGeometry(0.11,0.11,0.62,10);
+    var innerGeo = new THREE.CapsuleGeometry ? new THREE.CapsuleGeometry(0.055, 0.4, 4, 10) : new THREE.CylinderGeometry(0.05,0.05,0.5,8);
+    var l = new THREE.Mesh(earGeo, mat); l.position.set(-0.26,2.02,0.16); l.rotation.z=0.12; g.add(l);
+    var r = new THREE.Mesh(earGeo, mat); r.position.set(0.26,2.02,0.16); r.rotation.z=-0.12; g.add(r);
+    var li = new THREE.Mesh(innerGeo, pinkMat); li.position.set(-0.26,2.05,0.24); li.rotation.z=0.12; g.add(li);
+    var ri = new THREE.Mesh(innerGeo, pinkMat); ri.position.set(0.26,2.05,0.24); ri.rotation.z=-0.12; g.add(ri);
   } else if(pet.species === '狗'){
-    var deGeo = new THREE.SphereGeometry(0.2,6,5);
-    var dl = new THREE.Mesh(deGeo, darkMat); dl.scale.set(0.6,1.1,0.4); dl.position.set(-0.5,1.45,0.5); g.add(dl);
-    var dr = new THREE.Mesh(deGeo, darkMat); dr.scale.set(0.6,1.1,0.4); dr.position.set(0.5,1.45,0.5); g.add(dr);
+    /* 圆润垂耳 */
+    var deGeo = new THREE.SphereGeometry(0.24, 14, 12);
+    var dl = new THREE.Mesh(deGeo, darkEarMat(col)); dl.scale.set(0.62,1.15,0.4); dl.position.set(-0.6,1.42,0.1); dl.rotation.z=0.25; g.add(dl);
+    var dr = new THREE.Mesh(deGeo, darkEarMat(col)); dr.scale.set(0.62,1.15,0.4); dr.position.set(0.6,1.42,0.1); dr.rotation.z=-0.25; g.add(dr);
   } else {
-    /* 猫：三角耳 */
-    var ceGeo = new THREE.ConeGeometry(0.2, 0.32, 4);
-    var cl = new THREE.Mesh(ceGeo, mat); cl.position.set(-0.32,1.78,0.5); g.add(cl);
-    var cr = new THREE.Mesh(ceGeo, mat); cr.position.set(0.32,1.78,0.5); g.add(cr);
+    /* 猫：圆底三角耳 + 粉内耳 */
+    var ceGeo = new THREE.ConeGeometry(0.24, 0.4, 14);
+    var cl = new THREE.Mesh(ceGeo, mat); cl.position.set(-0.38,1.92,0.14); cl.rotation.z=0.12; g.add(cl);
+    var cr = new THREE.Mesh(ceGeo, mat); cr.position.set(0.38,1.92,0.14); cr.rotation.z=-0.12; g.add(cr);
+    var ciGeo = new THREE.ConeGeometry(0.12, 0.22, 12);
+    var cli = new THREE.Mesh(ciGeo, pinkMat); cli.position.set(-0.38,1.9,0.24); cli.rotation.z=0.12; g.add(cli);
+    var cri = new THREE.Mesh(ciGeo, pinkMat); cri.position.set(0.38,1.9,0.24); cri.rotation.z=-0.12; g.add(cri);
   }
 
-  /* 四条腿 */
-  var legGeo = new THREE.CylinderGeometry(0.14,0.14,0.4,6);
-  [[-0.4,-0.55],[0.4,-0.55],[-0.4,0.45],[0.4,0.45]].forEach(function(p){
-    var lg = new THREE.Mesh(legGeo, mat); lg.position.set(p[0],0.2,p[1]); g.add(lg);
+  /* 四条粗短小圆腿 */
+  var legGeo = new THREE.CapsuleGeometry ? new THREE.CapsuleGeometry(0.13, 0.12, 6, 12) : new THREE.CylinderGeometry(0.14,0.14,0.26,10);
+  [[-0.3,-0.3],[0.3,-0.3],[-0.3,0.32],[0.3,0.32]].forEach(function(p){
+    var lg = new THREE.Mesh(legGeo, mat); lg.position.set(p[0],0.14,p[1]); g.add(lg);
   });
 
   /* 尾巴 */
   if(pet.species === '兔子'){
-    var tb = new THREE.Mesh(new THREE.SphereGeometry(0.18,6,5), new THREE.MeshStandardMaterial({color:0xffffff,flatShading:true}));
-    tb.position.set(0,0.55,-0.85); g.add(tb);
+    var tb = new THREE.Mesh(new THREE.SphereGeometry(0.16,14,12), whiteMat);
+    tb.position.set(0,0.42,-0.62); g.add(tb);
+  } else if(pet.species === '猫'){
+    var tail = new THREE.Mesh(new THREE.CapsuleGeometry ? new THREE.CapsuleGeometry(0.08,0.5,6,10) : new THREE.CylinderGeometry(0.08,0.1,0.6,10), mat);
+    tail.position.set(0.35,0.7,-0.5); tail.rotation.set(-0.3,0,-0.8); g.add(tail);
   } else {
-    var tail = new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.12,0.7,6), mat);
-    tail.position.set(0,0.7,-0.85); tail.rotation.x = -0.7; g.add(tail);
+    var dtail = new THREE.Mesh(new THREE.SphereGeometry(0.14,12,10), mat);
+    dtail.scale.set(1,1,1.4); dtail.position.set(0,0.5,-0.62); g.add(dtail);
   }
 
   g.scale.set(scale, scale, scale);
   return g;
 }
 
+/* 垂耳用略深的同系色 */
+function darkEarMat(baseCol){
+  var c = new THREE.Color(baseCol);
+  c.offsetHSL(0, 0.05, -0.12);
+  return new THREE.MeshStandardMaterial({ color:c, roughness:0.65 });
+}
+
 function petBodyColor(sp){
-  if(sp === '猫') return 0x8a8f9c;      // 灰
-  if(sp === '狗') return 0xd8a15a;      // 棕黄
-  return 0xf2f2f5;                       // 兔子白
+  if(sp === '猫') return 0xffc48a;      // 暖橘猫
+  if(sp === '狗') return 0xe8b06a;      // 奶棕
+  return 0xfdf3f0;                       // 兔子奶白
+}
+function petBellyColor(sp){
+  if(sp === '猫') return 0xfff0dd;
+  if(sp === '狗') return 0xfae6cf;
+  return 0xffffff;
 }
 /* =========================================================
    微信
