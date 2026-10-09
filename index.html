@@ -4915,11 +4915,12 @@ var pet3d = null;   // {renderer, scene, camera, group, raf, drag}
 function petInit3D(el, pet){
   if(!el) return;
   if(typeof THREE === 'undefined'){
-    el.innerHTML = '<div style="color:#fff;text-align:center;padding:100px 0;font-size:13px">3D组件加载中…<br>网络不好时会退回平面显示</div>';
+    el.innerHTML = '<div style="color:#fff;text-align:center;padding:100px 0;font-size:13px">3D组件加载中…</div>';
+    var _t3=0; var _tm=setInterval(function(){ _t3++; if(typeof THREE!=='undefined'){ clearInterval(_tm); petInit3D(el,pet); } else if(_t3>60){ clearInterval(_tm); el.innerHTML='<div style="color:#ffb0c4;text-align:center;padding:100px 0;font-size:13px">3D 库加载失败<br>请检查网络</div>'; } },100);
     return;
   }
   petDispose3D();
-  var w = el.clientWidth || 300, h = 240;
+  var w = el.clientWidth || el.offsetWidth || (el.parentNode && el.parentNode.clientWidth) || 300; var h = 240;
   var scene = new THREE.Scene();
   var camera = new THREE.PerspectiveCamera(42, w/h, 0.1, 100);
   camera.position.set(0, 1.1, 4.2);
@@ -4928,6 +4929,7 @@ function petInit3D(el, pet){
   renderer.setSize(w, h);
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio||1));
   el.innerHTML = ''; el.appendChild(renderer.domElement);
+  setTimeout(function(){ var w2=el.clientWidth||el.offsetWidth||300; if(w2 && Math.abs(w2-w)>1){ camera.aspect=w2/240; camera.updateProjectionMatrix(); renderer.setSize(w2,240); } }, 60);
 
   var amb = new THREE.AmbientLight(0xffffff, 0.75); scene.add(amb);
   var dir = new THREE.DirectionalLight(0xffffff, 0.85); dir.position.set(2,4,3); scene.add(dir);
